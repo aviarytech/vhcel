@@ -54,7 +54,7 @@ predecessor linkage, controller proofs from witness receipts, and storage chunki
 from checkpoint trust. Proposed VHCEL mappings are explicitly not wire bindings
 or cryptographically valid conversion examples.
 
-## Required SCID and current-event identifiers
+## Required SCID and current-event identifiers (superseded)
 
 The editor selected mandatory SCIDs for all VHCEL histories and the did:webvh
 current-event identifier model. This supersedes the imported draft's optional
@@ -69,3 +69,20 @@ the SCID in results. Checkpoints bind the SCID. A caller-supplied expected SCID
 is still distinguished from a self-consistent SCID obtained with the history.
 Both comparisons reflect the selected direction. Exact placeholder processing,
 protected fields, proof coverage, and the common derivation algorithm remain open.
+
+## Mandatory SCID with CEL predecessor linkage
+
+The editor retained mandatory SCIDs and restored CEL-style `previousEvent`
+linkage. This supersedes the current-event identifier and seed-substitution
+choice above: mandatory SCIDs do not require that construction.
+
+Genesis carries the SCID and has no `previousEvent`. Each successor references
+the calculated digest of the completed preceding event. A stored `eventId` is
+not required. Verification computes event digests, checks predecessor references,
+and validates required proofs and trusted commitments, including for the final
+supplied event. Computing a digest alone does not authenticate it.
+
+Updated terminology, conformance, the data model, genesis and verification
+algorithms, examples, and both log comparisons. The mandatory SCID, expected-SCID
+checks, and checkpoint binding remain. Exact genesis self-reference processing,
+SCID placement, event hashing, and proof coverage remain binding decisions.

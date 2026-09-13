@@ -213,9 +213,8 @@ of an object.</p>
 <dt id="event"><dfn>Event</dfn></dt>
 <dd>
 
-<p>A record carrying its own cryptographic identifier and an operation. Its
-identifier commits to the SCID at genesis or to the immediately preceding event
-identifier for a successor.</p>
+<p>A record carrying an operation. Each non-genesis event also carries a
+reference to the cryptographic digest of its immediate predecessor.</p>
 </dd>
 <dt id="genesis-event"><dfn>Genesis Event</dfn></dt>
 <dd>
@@ -285,9 +284,9 @@ semantics.</p>
 <p>Transport and discovery are outside the scope of this specification.</p>
 </section>
 <section id="conformance">
-<p>A conforming history MUST have a genesis-derived SCID and every event MUST
-carry its own verifiable identifier. SCIDs are a core requirement, not an optional
-application capability.</p>
+<p>A conforming history MUST have a genesis-derived SCID and every non-genesis
+event MUST reference its immediate predecessor through <code>previousEvent</code>.
+SCIDs are a core requirement, not an optional application capability.</p>
 <p>Conformance is relative to a named binding and application profile.
 This draft alone does not define a complete interoperable wire protocol.</p>
 <p>A conforming Verifiable History processor:</p>
@@ -315,14 +314,14 @@ successfully verified history from an unverified representation.</p>
 <table class="simple"><caption>Conceptual event properties</caption><thead><tr><th scope="col">Property</th><th scope="col">Description</th></tr></thead>
 <tbody>
 <tr><td><code>operation</code></td><td>REQUIRED. Describes the application-defined state transition. See <a href="#operations-and-state"></a>.</td></tr>
-<tr><td><code>eventId</code></td><td>REQUIRED. Identifies this event. Its calculation is seeded by the SCID at genesis and by the preceding event identifier thereafter. See <a href="#event-identification"></a>.</td></tr>
+<tr><td><code>previousEvent</code></td><td>REQUIRED for non-genesis events; absent at genesis. References the cryptographic digest of the immediately preceding event. See <a href="#event-chaining"></a>.</td></tr>
 <tr><td><code>scid</code></td><td>REQUIRED in genesis. Identifies the entire history and is immutable. Subsequent events are bound to it through the chain. See <a href="#self-certifying-history-identifiers"></a>.</td></tr>
 <tr><td><code>time</code></td><td>OPTIONAL. An asserted event timestamp. Its interpretation is defined by the application.</td></tr>
 <tr><td>Authorization proofs</td><td>Required when the application policy requires authorization. Placement and proof coverage are defined by the CEL binding.</td></tr>
 <tr><td>External references</td><td>OPTIONAL. Cryptographic commitments to data held outside the event. See <a href="#external-data"></a>.</td></tr>
 <tr><td>Application properties</td><td>OPTIONAL. Additional information defined by the application specification.</td></tr>
 </tbody></table><pre class="example language-json" title="Conceptual update event">{
-  "eventId": "&lt;current-event-id&gt;",
+  "previousEvent": "&lt;previous-event-digest&gt;",
   "time": "2026-09-12T07:00:00Z",
   "operation": {
     "type": "update",
@@ -330,17 +329,17 @@ successfully verified history from an unverified representation.</p>
   },
   "proof": []
 }</pre>
-<p>The event carries its own identifier, illustrated as <code>eventId</code>, rather
-than a separate <code>previousEvent</code> property. The predecessor value is
-supplied when constructing or verifying the event hash. The history's SCID is
-established by genesis and is not repeated in this update sketch. Exact field
-names, placement, and encoding MUST be specified by the VHCEL binding; the
-examples illustrate the selected model, not a finalized wire format.</p>
+<p>The event's identifier is computed from its protected content; it need not
+be stored in the event. The <code>previousEvent</code> value is part of that
+content. The history's SCID is established by genesis and is not repeated in
+this update sketch. Exact placement and encoding MUST be specified by the
+VHCEL binding; the examples illustrate the selected model, not a finalized
+wire format.</p>
 <p class="issue" id="issue-cel-binding">Select a concrete CEL version and define
 its mapping to this model, including event envelopes, controller proofs,
-witness proofs, mandatory SCIDs, current-event identifiers, and chunk boundaries.
-[[?CEL]] is the alignment target; adapting its explicit predecessor field to this
-model remains a binding decision, and compatibility has not yet been demonstrated.</p>
+witness proofs, mandatory SCIDs, predecessor references, and chunk boundaries.
+[[?CEL]] is the alignment target; this model retains its explicit
+<code>previousEvent</code> linkage, but compatibility has not yet been demonstrated.</p>
 </section>
 <section id="external-data">
 <h3>External References</h3>
@@ -348,6 +347,7 @@ model remains a binding decision, and compatibility has not yet been demonstrate
 the event.</p>
 <p>Conceptually:</p>
 <pre class="example language-json" title="Conceptual external data reference">{
+  "previousEvent": "&lt;previous-event-digest&gt;",
   "operation": {
     "type": "update",
     "dataReference": {
@@ -415,17 +415,18 @@ a particular event within that history.</p>
 storage or discovery location changes. A successor MUST NOT establish a different
 SCID for the same history. The chain binds subsequent events to the genesis SCID;
 it does not require every event to repeat the value.</p>
-<p>The SCID anchors the event-identifier calculation: genesis uses the SCID as
-its hash-input seed, and each successor uses the preceding event's verified
-identifier. Each published event carries the resulting identifier of itself.</p>
-<pre class="nohighlight example" title="SCID and event identity bootstrap">SCID = DERIVE_SCID(genesisTemplate)
-E[0].eventId = EVENT_ID(E[0], seed = SCID)
-E[i].eventId = EVENT_ID(E[i], seed = E[i-1].eventId)  // i &gt; 0</pre>
-<p class="note">These are two distinct commitments: the stable SCID and the
-identifier of the completed genesis event. The functions above describe the
-processing relationship, not concrete cryptographic algorithms.</p>
+<p>SCID derivation and event chaining are separate procedures. The SCID commits
+to genesis. Each successor's <code>previousEvent</code> commits to the digest of
+the completed preceding event. A stored current-event identifier and an
+identifier-substitution procedure are not required.</p>
+<pre class="nohighlight example" title="SCID and predecessor linkage">SCID = DERIVE_SCID(genesisTemplate)
+E[0].scid = SCID
+E[1].previousEvent = EVENT_DIGEST(E[0])
+E[2].previousEvent = EVENT_DIGEST(E[1])</pre>
+<p class="note">The stable SCID and the digest of the completed genesis event
+serve different roles and are not assumed to be equal. The functions above
+describe the processing relationship, not concrete cryptographic algorithms.</p>
 <pre class="example language-json" title="Genesis with a required SCID (conceptual)">{
-  "eventId": "&lt;genesis-event-id&gt;",
   "scid": "&lt;self-certifying-history-id&gt;",
   "operation": {
     "type": "create",
@@ -439,11 +440,12 @@ If the caller supplies an expected SCID, the processor MUST also compare against
 that value. Internal consistency alone does not establish that a supplied history
 is the history the caller intended.</p>
 <p class="issue" id="issue-scid">SCIDs are mandatory. Finalize the common genesis
-commitment procedure: placeholder substitution, protected fields, domain
-separation, canonicalization, and encoding. Use the did:webvh bootstrap as the
-starting point, including a deterministic treatment of embedded SCIDs and the
-event's own identifier that avoids a circular hash input. The exact derivation
-algorithm remains to be specified by the binding.</p>
+commitment procedure, including protected fields, domain separation,
+canonicalization, encoding, and deterministic treatment of the SCID field and
+any embedded SCID references to avoid circular hash input. Placeholder processing
+is one candidate for genesis derivation; it does not require replacing CEL's
+<code>previousEvent</code> linkage. The exact derivation algorithm remains to be
+specified by the binding.</p>
 <pre class="nohighlight example" title="One history at multiple locations">SCID
  |
  +--&gt; HTTPS location A
@@ -628,44 +630,37 @@ formats they support.</p>
 </section>
 <section id="algorithms"><h2>Algorithms</h2><p>The following processing rules define event identification, history continuity, and verification. A selected CEL binding supplies the cryptographic procedures referenced by these algorithms.</p><section id="event-identification">
 <h3>Event Identification</h3>
-<p>Every event MUST carry its own deterministic cryptographic identifier.
-The identifier MUST be calculated using the SCID as the seed for genesis, or
-the immediately preceding event's verified identifier for a successor.</p>
-<p>Following the did:webvh construction model, the hash input is a temporary
-representation in which the event's own identifier is replaced by that seed.
-The published event contains the resulting current-event identifier. It does
-not contain the temporary seed in place of its own identifier.</p>
-<pre class="nohighlight example" title="Conceptual event identifier calculation">seed = SCID                          // genesis
-seed = previousVerifiedEvent.eventId // successor
-input = PREPARE(event, eventId = seed)
-eventId = ENCODE(HASH(CANONICALIZE(PROTECTED(input))))</pre>
-<p>The binding MUST define the exact preparation and protected-field rules,
-canonicalization, byte encoding, digest algorithms, and identifier encoding.
-The genesis commitment procedure MUST define how the SCID is derived before
-it is used as this seed. Witness receipts MUST remain outside the event identity
+<p>Every event MUST have a deterministic cryptographic identifier calculated
+from its protected content. This identifier is the event's digest; it need not
+be stored as a property of the event.</p>
+<pre class="nohighlight example" title="Conceptual event digest calculation">EVENT_DIGEST(event) = ENCODE(HASH(CANONICALIZE(PROTECTED(event))))</pre>
+<p>The binding MUST define protected fields, canonicalization, byte encoding,
+digest algorithms, and identifier encoding. The protected content MUST include
+the SCID carried by genesis and the <code>previousEvent</code> reference carried
+by each successor. Witness receipts MUST remain outside the event identity
 calculation.</p>
-<p class="issue" id="issue-event-identity">The current-event identifier and
-SCID-seeded bootstrap are the selected model. Finalize field names, any
-sequence-number component, controller-proof inclusion, unknown-property
-handling, and algorithm transitions. The conceptual formula is not yet an
-implementable hashing algorithm.</p>
+<p class="issue" id="issue-event-identity">CEL-style predecessor references are
+the selected model. Finalize the event-digest procedure, controller-proof
+inclusion and coverage, unknown-property handling, and algorithm transitions.
+The conceptual formula is not yet an implementable hashing algorithm.</p>
 <p>A verifier MUST reconstruct the hash input and calculate the identifier of
-every event, including the final supplied event. It MUST reject a missing
-identifier or a mismatch with the identifier carried by the event.</p>
-<p>Changing cryptographically protected content or the seed MUST change the
-calculated identifier except with negligible cryptographic probability.</p>
+every event, including the final supplied event. It MUST check successor
+references, required proofs, and any trusted event commitments against the
+protected content or calculated identifiers as specified by the binding.
+Calculating a digest alone does not authenticate an event.</p>
+<p>Changing cryptographically protected content, including a predecessor reference,
+MUST change the calculated identifier except with negligible cryptographic probability.</p>
 </section>
 <section id="event-chaining">
 <h3>Event Chaining</h3>
-<p>Every non-genesis event MUST commit to the identifier of its immediate
-predecessor through its own event-identifier calculation. VHCEL does not require
-a separate <code>previousEvent</code> property in each serialized event.</p>
-<pre class="nohighlight example" title="Predecessor links">SCID --&gt; E[0].eventId --&gt; E[1].eventId --&gt; E[2].eventId</pre>
-<pre class="nohighlight example" title="Event identifier references">VERIFY_ID(E[0], seed = SCID)
-VERIFY_ID(E[1], seed = E[0].eventId)
-VERIFY_ID(E[2], seed = E[1].eventId)</pre>
-<p>A verifier supplies the previously verified event identifier as the next
-seed and compares the result with the current event's own identifier. A mismatch
+<p>Every non-genesis event MUST carry a <code>previousEvent</code> reference to
+the cryptographic digest of its immediate predecessor.</p>
+<pre class="nohighlight example" title="Predecessor links">E[2] --&gt; E[1] --&gt; E[0] (genesis carries the SCID)
+     previousEvent references</pre>
+<pre class="nohighlight example" title="Checking predecessor references">REQUIRE E[1].previousEvent == EVENT_DIGEST(E[0])
+REQUIRE E[2].previousEvent == EVENT_DIGEST(E[1])</pre>
+<p>A verifier compares each <code>previousEvent</code> with the calculated digest
+of the immediately preceding verified event. A missing reference or a mismatch
 MUST cause verification to fail.</p>
 <p>This detects a broken link within the supplied sequence. An attacker may
 still serve a valid prefix or an alternative authorized branch. The mandatory
@@ -677,9 +672,10 @@ or uniqueness of succession.</p>
 <p>The first event in a Verifiable History is the <strong>genesis event</strong>.
 It MUST establish the history's SCID and sufficient information to initialize
 application state, and MUST satisfy the application's genesis requirements.</p>
-<p>Genesis has no preceding event. The SCID is used as the seed for its event
-identifier calculation. The genesis event's own identifier and its SCID MUST
-both be verified according to the binding.</p>
+<p>Genesis has no preceding event and MUST NOT carry a <code>previousEvent</code>
+property. Its SCID MUST be verified according to the binding. The digest of the
+completed genesis event is calculated for use by its successor and any applicable
+proofs or trusted commitments.</p>
 </section>
 <section id="history-verification">
 <h3>History Verification</h3>
@@ -695,19 +691,19 @@ any independently obtained expected SCID or trusted event commitment.</p>
   calculate the SCID, and compare it with the supplied value. Reject a mismatch.
   If the caller supplies an expected SCID, also require it to match.</li>
   <li>Verify that <code>E[0]</code> satisfies the application's genesis rules.
-  Calculate its event identifier using the verified SCID as the seed. Compare
-  the result with the identifier carried by genesis; reject a missing identifier
-  or a mismatch.</li>
+  Reject a <code>previousEvent</code> property at genesis. Calculate the digest
+  of the completed genesis event using the binding's event-digest procedure.</li>
   <li>Validate the genesis operation and any external data needed to process it.
   Verify every required genesis authorization proof, pre-rotation constraint,
   and witness requirement under the application's bootstrap rules. Only then
   initialize the verified state <code>S[0]</code>.</li>
   <li>For each event <code>E[i]</code>, where <code>i &gt; 0</code>:
     <ol>
-      <li>Calculate its identifier using the verified identifier of
-      <code>E[i-1]</code> as the seed, under the binding and algorithm-transition
-      rules permitted by the previously verified state. Compare it with the
-      event's own identifier; reject a missing identifier or a mismatch.</li>
+      <li>Require <code>E[i].previousEvent</code> to match the calculated digest
+      of the verified <code>E[i-1]</code>. Reject a missing reference or a mismatch.</li>
+      <li>Calculate the digest of <code>E[i]</code>, including its
+      <code>previousEvent</code> reference, under the binding and algorithm-transition
+      rules permitted by the previously verified state.</li>
       <li>Reject any attempt to change the history's SCID. If the binding permits
       a repeated SCID, require it to match the genesis SCID.</li>
       <li>Check whether <code>S[i-1]</code> permits a successor, including any
@@ -1293,8 +1289,8 @@ The <code>did:webvh</code> column summarizes [[?DID-WEBVH]], particularly its
 <thead><tr><th scope="col">Aspect</th><th scope="col">did:webvh log</th><th scope="col">VHCEL draft</th></tr></thead>
 <tbody>
 <tr><th scope="row">Container</th><td><code>did.jsonl</code>: one JSON object per line.</td><td>An ordered sequence of events; exchange serialization remains open.</td></tr>
-<tr><th scope="row">Entry identity</th><td><code>versionId</code> combines a sequence number and entry hash.</td><td>Each event carries its own <code>eventId</code>; exact encoding and any sequence number remain open.</td></tr>
-<tr><th scope="row">Predecessor</th><td>No separate field. Hashing substitutes the prior <code>versionId</code>; genesis substitutes the SCID.</td><td>The same seed-substitution model: SCID for genesis, preceding event ID for successors. No separate predecessor field.</td></tr>
+<tr><th scope="row">Entry identity</th><td><code>versionId</code> combines a sequence number and entry hash.</td><td>An event is identified by its calculated digest; no stored current-event identifier is required.</td></tr>
+<tr><th scope="row">Predecessor</th><td>No separate field. Hashing substitutes the prior <code>versionId</code>; genesis substitutes the SCID.</td><td>An explicit <code>previousEvent</code> references the preceding event digest. Genesis has no predecessor reference.</td></tr>
 <tr><th scope="row">Hashing</th><td>JCS, SHA-256 multihash, base58btc encoding; excludes <code>proof</code>.</td><td>Protected fields, canonicalization, algorithms, and encoding require a CEL binding.</td></tr>
 <tr><th scope="row">Time</th><td><code>versionTime</code> records controller-asserted time.</td><td>An optional timestamp, illustrated as <code>time</code>.</td></tr>
 <tr><th scope="row">Payload</th><td><code>state</code> contains the resulting DID Document.</td><td><code>operation</code> describes a transition; the application defines resulting state.</td></tr>
@@ -1321,7 +1317,7 @@ valid cryptographic test vectors. The VHCEL sketch does not define a DID profile
   ]
 }</pre>
 <pre class="example language-json" title="VHCEL update event (conceptual)">{
-  "eventId": "&lt;current-event-id&gt;",
+  "previousEvent": "&lt;previous-event-digest&gt;",
   "time": "2026-09-13T08:00:00Z",
   "operation": {
     "type": "update",
@@ -1334,17 +1330,17 @@ valid cryptographic test vectors. The VHCEL sketch does not define a DID profile
   ]
 }</pre>
 </div>
-<p>The proposed mapping is <code>versionId</code> to the event's own identifier,
-<code>parameters.scid</code> to the required genesis SCID, <code>state</code> to application operation data,
+<p>The proposed mapping is <code>parameters.scid</code> to the required genesis SCID, <code>state</code> to application operation data,
 <code>versionTime</code> to event time, and <code>parameters</code> to profile-defined
-policy metadata. It is not a conversion algorithm. A binding still needs to say
-where policy changes are represented and how the operation produces the DID state.</p>
+policy metadata. VHCEL computes each event's digest and places it in the next
+event's <code>previousEvent</code>; there is no direct <code>versionId</code> field
+mapping. It is not a conversion algorithm. A binding still needs to say where
+policy changes are represented and how the operation produces the DID state.</p>
 <p class="note">Changing an entry's shape changes the material used to identify
 and sign it. A conversion would need new cryptographic identifiers and proofs,
 or a binding that explicitly preserves and verifies the original signed entry.
-VHCEL follows did:webvh's use of the current event's own identifier and a
-SCID-based genesis bootstrap. Shared construction does not imply identical
-canonical bytes, digest encoding, or signatures.</p>
+VHCEL retains CEL's explicit predecessor references. Mandatory SCIDs do not
+require adopting did:webvh's current-identifier substitution procedure.</p>
 </section>
 
 <section id="comparison-cel">
@@ -1358,7 +1354,7 @@ those same mechanisms.</p>
 <thead><tr><th scope="col">Aspect</th><th scope="col">CEL draft</th><th scope="col">VHCEL draft</th></tr></thead>
 <tbody>
 <tr><th scope="row">Container</th><td><code>log</code> holds entries containing <code>event</code> and witness <code>proof</code> values.</td><td>No log envelope is selected; current examples show conceptual events.</td></tr>
-<tr><th scope="row">Predecessor</th><td><code>event.previousEvent</code> references the preceding event's digest.</td><td>Carries the current <code>eventId</code>; its hash input uses the preceding verified ID as the seed.</td></tr>
+<tr><th scope="row">Predecessor</th><td><code>event.previousEvent</code> references the preceding event's digest.</td><td>Uses the same explicit <code>previousEvent</code> reference to the preceding event digest.</td></tr>
 <tr><th scope="row">Digest representation</th><td>References use base64url multibase-encoded SHA-256 multihashes.</td><td>No baseline digest encoding or complete event-hashing procedure is selected.</td></tr>
 <tr><th scope="row">Operation</th><td><code>operation.type</code>: <code>create</code>, <code>update</code>, <code>deactivate</code>, or an extension.</td><td>These are illustrative types; the application defines supported operations.</td></tr>
 <tr><th scope="row">Application data</th><td><code>operation.data</code> or <code>operation.dataReference</code>.</td><td>Embedded and external data are supported conceptually; operation syntax is application-defined.</td></tr>
@@ -1367,7 +1363,7 @@ those same mechanisms.</p>
 <tr><th scope="row">Application contract</th><td>Applications define control, state construction, and witness-proof validity.</td><td>Profiles also specify bootstrap, pre-rotation, fork handling, deactivation, and required bindings.</td></tr>
 <tr><th scope="row">History identity and rotation</th><td>No generic SCID or pre-rotation profile; a DID application example derives an identifier.</td><td>A SCID is mandatory for every history. Pre-rotation remains a profile capability.</td></tr>
 <tr><th scope="row">Chunking</th><td><code>previousLog</code> links log chunks.</td><td>No chunking format selected. Trusted checkpoints are separately described.</td></tr>
-<tr><th scope="row">Verification result</th><td>The displayed verification algorithm checks proofs and returns <code>true</code>.</td><td>Returns SCID, state, final supplied event ID, event count, profile identity, and verification scope.</td></tr>
+<tr><th scope="row">Verification result</th><td>The displayed verification algorithm checks proofs and returns <code>true</code>.</td><td>Returns SCID, state, calculated digest of the final supplied event, event count, profile identity, and verification scope.</td></tr>
 </tbody>
 </table>
 <p>These sketches highlight the envelope boundary. All proofs and digest values
@@ -1395,7 +1391,7 @@ authorization; it does not correspond to CEL's outer witness-proof array.</p>
   }]
 }</pre>
 <pre class="example language-json" title="VHCEL event without a selected envelope (conceptual)">{
-  "eventId": "&lt;current-event-id&gt;",
+  "previousEvent": "&lt;previous-event-digest&gt;",
   "operation": {
     "type": "update",
     "data": {
@@ -1408,8 +1404,8 @@ authorization; it does not correspond to CEL's outer witness-proof array.</p>
 }</pre>
 </div>
 <p>Reusing CEL's outer envelope is a candidate binding for VHCEL. The event model
-would need to accommodate mandatory SCIDs and current-event identifiers rather
-than only an explicit <code>previousEvent</code> field. Exact hash input,
+retains <code>previousEvent</code> linkage and adds mandatory genesis-derived
+SCIDs. The SCID placement and derivation, exact hash input,
 controller-proof coverage, policy representation, and witness-policy activation
 rules remain to be specified; this is not an assertion of CEL wire compatibility.</p>
 <p class="note">Log chunking and checkpoint verification solve different problems.

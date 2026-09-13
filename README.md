@@ -10,9 +10,11 @@ It covers the abstract history model, genesis, chaining, state transitions,
 authorization, pre-rotation, witnessing, external data, verification, application
 profiles, and security and privacy considerations.
 
-Every history has a required genesis-derived SCID. Events carry their own IDs,
-using the SCID as the genesis hash-input seed and the preceding event ID for
-successors. The exact binding and cryptographic encoding remain under development.
+Every history has a required genesis-derived SCID. Each subsequent event uses
+CEL-style `previousEvent` linkage to the digest of its immediate predecessor.
+Event digests are computed; no stored current-event ID or ID-substitution
+procedure is required. The exact binding and cryptographic encoding remain
+under development.
 
 ## Preview and edit
 
