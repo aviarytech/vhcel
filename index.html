@@ -1,0 +1,1459 @@
+<!DOCTYPE html><html lang="en"><head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>VHCEL v0.1</title>
+  <script src="./respec-config.js" class="remove"></script>
+  <script src="https://www.w3.org/Tools/respec/respec-w3c" class="remove" async=""></script>
+  <style>
+    /* Follow CEL's code, property-table, and algorithm conventions. */
+    :not(pre) > code { color: #b54300; color: light-dark(#b54300, #ffb380); font-weight: bold; }
+    pre { overflow-x: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
+    table.simple { border-collapse: collapse; margin: 25px 0; width: 100%; border: 1px solid #ddd; }
+    table.simple thead tr { background-color: #005a9c; color: #fff; text-align: left; }
+    table.simple th, table.simple td { padding: 12px 15px; text-align: left; vertical-align: top; }
+    table.simple tbody tr { border-bottom: 1px solid #ddd; }
+    table.simple tbody tr:nth-of-type(even) { background-color: light-dark(#00000008, #ffffff08); }
+    table.simple tbody tr:last-of-type { border-bottom: 2px solid #005a9c; }
+    caption { text-align: left; font-weight: bold; margin-bottom: 0.5em; }
+    ol.algorithm, ol.algorithm ol { counter-reset: numsection; list-style-type: none; }
+    ol.algorithm li { margin: 0.5em 0; }
+    ol.algorithm li::before { font-weight: bold; counter-increment: numsection; content: counters(numsection, ".") ") "; }
+    .comparison-table { table-layout: fixed; }
+    .comparison-table th:first-child { width: 19%; }
+    .comparison-table th, .comparison-table td { overflow-wrap: anywhere; }
+    .comparison-examples { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1em; align-items: start; }
+    .comparison-examples > * { min-width: 0; margin-inline: 0; }
+    @media (max-width: 50em) {
+      .comparison-examples { grid-template-columns: 1fr; }
+      .comparison-table th, .comparison-table td { padding: 8px; }
+    }
+    dt { margin-top: 1em; }
+    dd > p:first-child { margin-top: 0.3em; }
+  </style>
+</head>
+<body><!-- ReSpec moves this notice into the generated header. --><p class="copyright">Copyright and licensing terms are to be confirmed by the editors.</p><section id="abstract"><h2>Abstract</h2><p>This specification defines a processing model for maintaining and verifying
+the history of an evolving data object using a Cryptographic Event Log.
+Every history has a self-certifying identifier derived from genesis. The model
+describes event continuity, authorization, state transitions, pre-rotation, and
+witnessing, with application-specific behavior defined by profiles.</p></section>
+<section id="sotd">
+<p>This is version 0.1 of an exploratory editor's draft.
+It is a proposal for discussion, not an adopted DIF or W3C specification.
+The draft is maintained in the <a href="https://github.com/aviarytech/vhcel/">VHCEL repository</a>
+and published on <a href="https://aviarytech.github.io/vhcel/">GitHub Pages</a>.
+Editors, standards publication venue, and licensing are to be confirmed.</p>
+<p>The draft specifies a history processing model. A concrete CEL binding and
+application profile are still required for interoperable implementations.
+Examples are conceptual; abbreviated digests and empty proof arrays are not test vectors.
+Editorial issues identify choices that remain open.</p>
+</section>
+<section id="introduction">
+<h2>Introduction</h2>
+
+<p>This specification defines <strong>Verifiable History (VH)</strong>, a mechanism for
+maintaining and verifying the history of an evolving data object using a
+Cryptographic Event Log (CEL).</p>
+<p>A Verifiable History consists of an ordered sequence of cryptographically
+linked events. Each event describes an operation against an application-defined
+state. Each non-genesis event is cryptographically bound to its predecessor.</p>
+<p>Verifiers can independently establish that:</p>
+<ul><li><p>the history begins with the expected genesis event, when an expected identity is supplied;</p>
+</li>
+<li><p>the supplied events satisfy their cryptographic commitments and predecessor links;</p>
+</li>
+<li><p>each state transition was authorized according to the applicable
+authorization policy; and</p>
+</li>
+<li><p>the current state can be deterministically derived from the history.</p>
+</li>
+</ul>
+<p>Verification alone does not establish that the supplied history is the latest
+available history or the only valid branch. See <a href="#history-truncation"></a>
+and <a href="#forks"></a>.</p>
+<p>This specification defines the processing model necessary to construct and
+verify a Verifiable History while delegating application-specific state
+semantics to application specifications.</p>
+<p>Verifiable History is independent of any particular identifier system,
+transport, storage system, or application data model.</p>
+<p>DID methods, digital assets, social objects, configuration systems, registries,
+and other applications MAY define application specifications based on this
+specification.</p>
+
+<p>VHCEL builds on the history mechanisms of [[?DID-WEBVH]] and the
+separation of events, operations, and external references in [[?CEL]].
+This draft proposes an alignment; it does not establish wire compatibility
+with either specification.</p>
+<p>Many systems publish data whose value changes over time.</p>
+<p>Examples include:</p>
+<ul><li><p>DID Documents;</p>
+</li>
+<li><p>public keys and authorization policies;</p>
+</li>
+<li><p>digital assets;</p>
+</li>
+<li><p>social objects;</p>
+</li>
+<li><p>configuration documents;</p>
+</li>
+<li><p>registries; and</p>
+</li>
+<li><p>other persistent digital objects.</p>
+</li>
+</ul>
+<p>Publishing only the latest representation of such an object does not provide
+cryptographic evidence of how the object reached that state.</p>
+<p>A Verifiable History provides that evidence.</p>
+<p>Conceptually:</p>
+<pre class="nohighlight example" title="Evolution of application state">Genesis Event
+      |
+      v
+   Event 1
+      |
+      v
+   Event 2
+      |
+      v
+   Event 3
+      |
+      v
+ Current State</pre>
+<p>Each non-genesis event cryptographically commits to its predecessor. Application-defined
+authorization rules determine whether an operation represented by an event is
+permitted.</p>
+<p>The resulting history can be verified independently of the system from which
+the history was retrieved.</p>
+<p>This distinction is fundamental:</p>
+<blockquote><p>Discovery determines where a history can be found. Verifiable History
+determines whether that history is authentic.</p>
+</blockquote>
+<p>A Verifiable History therefore does not require a blockchain, distributed
+ledger, trusted database, or particular network protocol.</p>
+<section id="design-goals" class="informative">
+<h3>Goals</h3>
+<p>This specification has the following design goals.</p>
+
+
+
+
+
+
+
+
+
+<dl><dt id="transport-independence">Transport Independence</dt>
+<dd>
+
+<p>A Verifiable History MUST NOT depend upon a particular transport or storage
+system for its integrity.</p>
+<p>A conforming history MAY be distributed using HTTPS, local files, content
+addressed storage, peer-to-peer networks, databases, or other mechanisms.</p>
+</dd>
+<dt id="application-independence">Application Independence</dt>
+<dd>
+
+<p>The core history format MUST NOT depend upon the semantics of the object whose
+history is being represented.</p>
+<p>Applications define how operations modify application state.</p>
+</dd>
+<dt id="independent-verification">Independent Verification</dt>
+<dd>
+
+<p>A verifier possessing a history and the required cryptographic material MUST
+be able to verify that history without trusting the system from which the
+history was retrieved.</p>
+</dd>
+<dt id="deterministic-processing">Deterministic Processing</dt>
+<dd>
+
+<p>Two conforming processors given the same valid history and application
+specification MUST derive the same current state.</p>
+</dd>
+<dt id="cryptographic-agility">Cryptographic Agility</dt>
+<dd>
+
+<p>The format SHOULD permit cryptographic algorithms to evolve without requiring
+a new history data model.</p>
+</dd></dl></section>
+<section id="terminology">
+<h3>Terminology</h3>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<dl><dt id="verifiable-history"><dfn>Verifiable History</dfn></dt>
+<dd>
+
+<p>An ordered sequence of cryptographically linked events describing the evolution
+of an object.</p>
+</dd>
+<dt id="cryptographic-event-log"><dfn>Cryptographic Event Log</dfn></dt>
+<dd>
+
+<p>The representation containing the events that comprise a Verifiable History.</p>
+</dd>
+<dt id="event"><dfn>Event</dfn></dt>
+<dd>
+
+<p>A record carrying its own cryptographic identifier and an operation. Its
+identifier commits to the SCID at genesis or to the immediately preceding event
+identifier for a successor.</p>
+</dd>
+<dt id="genesis-event"><dfn>Genesis Event</dfn></dt>
+<dd>
+
+<p>The first event in a Verifiable History.</p>
+</dd>
+<dt id="event-identifier"><dfn>Event Identifier</dfn></dt>
+<dd>
+
+<p>A cryptographic digest identifying an event.</p>
+</dd>
+<dt id="previous-event"><dfn>Previous Event</dfn></dt>
+<dd>
+
+<p>The event immediately preceding another event.</p>
+</dd>
+<dt id="operation"><dfn>Operation</dfn></dt>
+<dd>
+
+<p>Application-defined information describing a proposed state transition.</p>
+</dd>
+<dt id="state"><dfn>State</dfn></dt>
+<dd>
+
+<p>The application-defined representation resulting from processing zero or more
+operations.</p>
+</dd>
+<dt id="controller"><dfn>Controller</dfn></dt>
+<dd>
+
+<p>An entity authorized according to an application's authorization policy to
+create an event.</p>
+</dd>
+<dt id="witness"><dfn>Witness</dfn></dt>
+<dd>
+
+<p>An entity that produces cryptographic evidence acknowledging an event.</p>
+</dd>
+<dt id="history-identifier"><dfn>History Identifier</dfn></dt>
+<dd>
+
+<p>The required Self-Certifying History Identifier (SCID), derived from genesis
+and stable for the lifetime of a Verifiable History.</p>
+</dd>
+<dt id="application-specification"><dfn>Application Specification</dfn></dt>
+<dd>
+
+<p>A specification defining how a particular application interprets and processes
+events.</p>
+</dd></dl></section>
+<section id="architecture">
+<h3>Architecture</h3>
+<p>Verifiable History separates four concerns:</p>
+<pre class="nohighlight example" title="History architecture">+--------------------------------+
+| Application State              |
++--------------------------------+
+| Application Operations         |
++--------------------------------+
+| Verifiable History             |
++--------------------------------+
+| Cryptographic Event Log        |
++--------------------------------+</pre>
+<p>The Cryptographic Event Log establishes event integrity and ordering.</p>
+<p>Verifiable History establishes continuity and history verification.</p>
+<p>Application specifications establish authorization and state transition
+semantics.</p>
+<p>Transport and discovery are outside the scope of this specification.</p>
+</section>
+<section id="conformance">
+<p>A conforming history MUST have a genesis-derived SCID and every event MUST
+carry its own verifiable identifier. SCIDs are a core requirement, not an optional
+application capability.</p>
+<p>Conformance is relative to a named binding and application profile.
+This draft alone does not define a complete interoperable wire protocol.</p>
+<p>A conforming Verifiable History processor:</p>
+<ul><li><p>MUST implement the history verification algorithm defined by this
+specification;</p>
+</li>
+<li><p>MUST implement at least one compatible Cryptographic Event Log
+representation;</p>
+</li>
+<li><p>MUST reject histories that fail required cryptographic or application
+verification;</p>
+</li>
+<li><p>MUST NOT silently resolve forks unless permitted by the applicable
+application specification; and</p>
+</li>
+<li><p>MUST expose sufficient verification results for callers to distinguish a
+successfully verified history from an unverified representation.</p>
+</li>
+</ul>
+<p>A conforming application specification MUST satisfy the requirements in
+<a href="#application-specifications"></a>.</p>
+</section></section>
+<section id="data-model"><h2>Data Model</h2><p>For side-by-side mappings, see <a href="#comparison-didwebvh"></a> and <a href="#comparison-cel"></a>.</p><p>The data model describes the events, operations, and policies that comprise a verifiable history. Concrete property names and encodings are selected by a CEL binding.</p><section id="event-model">
+<h3>Event Entry</h3><p>A history contains one or more events. The following table summarizes the abstract event properties.</p>
+<table class="simple"><caption>Conceptual event properties</caption><thead><tr><th scope="col">Property</th><th scope="col">Description</th></tr></thead>
+<tbody>
+<tr><td><code>operation</code></td><td>REQUIRED. Describes the application-defined state transition. See <a href="#operations-and-state"></a>.</td></tr>
+<tr><td><code>eventId</code></td><td>REQUIRED. Identifies this event. Its calculation is seeded by the SCID at genesis and by the preceding event identifier thereafter. See <a href="#event-identification"></a>.</td></tr>
+<tr><td><code>scid</code></td><td>REQUIRED in genesis. Identifies the entire history and is immutable. Subsequent events are bound to it through the chain. See <a href="#self-certifying-history-identifiers"></a>.</td></tr>
+<tr><td><code>time</code></td><td>OPTIONAL. An asserted event timestamp. Its interpretation is defined by the application.</td></tr>
+<tr><td>Authorization proofs</td><td>Required when the application policy requires authorization. Placement and proof coverage are defined by the CEL binding.</td></tr>
+<tr><td>External references</td><td>OPTIONAL. Cryptographic commitments to data held outside the event. See <a href="#external-data"></a>.</td></tr>
+<tr><td>Application properties</td><td>OPTIONAL. Additional information defined by the application specification.</td></tr>
+</tbody></table><pre class="example language-json" title="Conceptual update event">{
+  "eventId": "&lt;current-event-id&gt;",
+  "time": "2026-09-12T07:00:00Z",
+  "operation": {
+    "type": "update",
+    "data": {}
+  },
+  "proof": []
+}</pre>
+<p>The event carries its own identifier, illustrated as <code>eventId</code>, rather
+than a separate <code>previousEvent</code> property. The predecessor value is
+supplied when constructing or verifying the event hash. The history's SCID is
+established by genesis and is not repeated in this update sketch. Exact field
+names, placement, and encoding MUST be specified by the VHCEL binding; the
+examples illustrate the selected model, not a finalized wire format.</p>
+<p class="issue" id="issue-cel-binding">Select a concrete CEL version and define
+its mapping to this model, including event envelopes, controller proofs,
+witness proofs, mandatory SCIDs, current-event identifiers, and chunk boundaries.
+[[?CEL]] is the alignment target; adapting its explicit predecessor field to this
+model remains a binding decision, and compatibility has not yet been demonstrated.</p>
+</section>
+<section id="external-data">
+<h3>External References</h3>
+<p>An event MAY cryptographically commit to data that is not embedded directly in
+the event.</p>
+<p>Conceptually:</p>
+<pre class="example language-json" title="Conceptual external data reference">{
+  "operation": {
+    "type": "update",
+    "dataReference": {
+      "digestMultibase": "uEi..."
+    }
+  }
+}</pre>
+<p>The referenced data MAY be available from one or more locations.</p>
+<p>The integrity of externally referenced data MUST be established from its
+cryptographic digest and MUST NOT depend solely upon the location from which it
+was retrieved.</p>
+<p>This permits:</p>
+<pre class="nohighlight example" title="Retrieving committed data">              +--&gt; HTTPS
+              |
+Event -&gt; Hash +--&gt; IPFS
+              |
+              +--&gt; P2P
+              |
+              +--&gt; local storage</pre>
+<p>without changing the cryptographic identity of the referenced data.</p>
+<p>If external data is required to validate or apply an operation, a processor
+MUST retrieve and verify it before accepting the resulting state. If it is
+unavailable, the processor MUST report incomplete verification or failure;
+it MUST NOT report the dependent state as verified. Optional data MAY remain
+unretrieved only when the application profile permits this, and the result
+MUST identify that data as unverified.</p>
+</section>
+<section id="operations-and-state">
+<h3>Operations and State</h3>
+<p>An operation describes an application-defined state transition.</p>
+<p>Common operation types MAY include:</p>
+<pre class="nohighlight example" title="Illustrative operation types">create
+update
+deactivate</pre>
+<p>Applications MAY define additional operation types.</p>
+<p>The core Verifiable History processor MUST NOT assign semantics to application
+operations beyond those required by this specification.</p>
+<p>An application specification MUST define:</p>
+<ol><li><p>valid operation types;</p>
+</li>
+<li><p>operation syntax;</p>
+</li>
+<li><p>the initial state construction algorithm;</p>
+</li>
+<li><p>the state transition algorithm; and</p>
+</li>
+<li><p>conditions under which an operation MUST be rejected.</p>
+</li>
+</ol>
+<p>Given:</p>
+<pre class="nohighlight example" title="State and operation notation">S(n) = application state after event n
+O(n) = operation contained in event n</pre>
+<p>state processing is conceptually:</p>
+<pre class="nohighlight example" title="State transition model">S(0) = CREATE(O(0))
+
+S(n) = APPLY(S(n-1), O(n))</pre>
+</section>
+<section id="self-certifying-history-identifiers">
+<h3>Self-Certifying History Identifiers</h3>
+<p>Every Verifiable History MUST have a <strong>Self-Certifying History Identifier
+(SCID)</strong> derived from its genesis commitment. Genesis MUST carry this
+value. The SCID identifies the history as a whole; an event identifier identifies
+a particular event within that history.</p>
+<p>The SCID MUST remain unchanged throughout the history, including when its
+storage or discovery location changes. A successor MUST NOT establish a different
+SCID for the same history. The chain binds subsequent events to the genesis SCID;
+it does not require every event to repeat the value.</p>
+<p>The SCID anchors the event-identifier calculation: genesis uses the SCID as
+its hash-input seed, and each successor uses the preceding event's verified
+identifier. Each published event carries the resulting identifier of itself.</p>
+<pre class="nohighlight example" title="SCID and event identity bootstrap">SCID = DERIVE_SCID(genesisTemplate)
+E[0].eventId = EVENT_ID(E[0], seed = SCID)
+E[i].eventId = EVENT_ID(E[i], seed = E[i-1].eventId)  // i &gt; 0</pre>
+<p class="note">These are two distinct commitments: the stable SCID and the
+identifier of the completed genesis event. The functions above describe the
+processing relationship, not concrete cryptographic algorithms.</p>
+<pre class="example language-json" title="Genesis with a required SCID (conceptual)">{
+  "eventId": "&lt;genesis-event-id&gt;",
+  "scid": "&lt;self-certifying-history-id&gt;",
+  "operation": {
+    "type": "create",
+    "data": { "name": "Example object" }
+  },
+  "proof": [{ "proofValue": "&lt;controller-proof&gt;" }]
+}</pre>
+<p>A processor verifying from genesis MUST recompute the SCID and compare it
+with the value carried by genesis. It MUST reject a missing or mismatched SCID.
+If the caller supplies an expected SCID, the processor MUST also compare against
+that value. Internal consistency alone does not establish that a supplied history
+is the history the caller intended.</p>
+<p class="issue" id="issue-scid">SCIDs are mandatory. Finalize the common genesis
+commitment procedure: placeholder substitution, protected fields, domain
+separation, canonicalization, and encoding. Use the did:webvh bootstrap as the
+starting point, including a deterministic treatment of embedded SCIDs and the
+event's own identifier that avoids a circular hash input. The exact derivation
+algorithm remains to be specified by the binding.</p>
+<pre class="nohighlight example" title="One history at multiple locations">SCID
+ |
+ +--&gt; HTTPS location A
+ |
+ +--&gt; HTTPS location B
+ |
+ +--&gt; content-addressed network
+ |
+ +--&gt; local archive</pre>
+<p>The same SCID can be verified regardless of where the history is retrieved.</p>
+</section>
+<section id="authorization">
+<h3>Authorization</h3>
+<p>Applications MAY require events to be authorized.</p>
+<p>An application specification using authorization MUST define:</p>
+<ul><li><p>how controllers are identified;</p>
+</li>
+<li><p>how authorization keys are represented;</p>
+</li>
+<li><p>which cryptographic proof mechanisms are permitted;</p>
+</li>
+<li><p>which controllers may authorize each operation; and</p>
+</li>
+<li><p>how authorization changes over time.</p>
+</li>
+</ul>
+<p>For non-genesis events, authorization MUST be evaluated under the policy
+established by previously verified state. New keys in an event MUST NOT grant
+that event authority unless the prior policy explicitly permits their use,
+for example through a previously established pre-rotation commitment.
+Genesis authorization MUST follow the application specification's bootstrap rules.</p>
+<p>Conceptually:</p>
+<pre class="nohighlight example" title="Authorization from the previous state">State N
+   |
+   +-- authorized keys: A, B
+   |
+   v
+Event N+1
+   |
+   +-- proof from A</pre>
+<p>The event is valid only if the authorization policy established by State N
+permits A to authorize the operation.</p>
+<p>This prevents an event from granting itself authority.</p>
+</section>
+<section id="authorization-transitions">
+<h3>Authorization Transitions</h3>
+<p>An operation MAY change the authorization policy governing subsequent events.</p>
+<p>For example:</p>
+<pre class="nohighlight example" title="Changing the active authorization key">Event N
+
+Authorized:
+  Key A
+
+        |
+        | signed by A
+        v
+
+Event N+1
+
+Authorized:
+  Key B</pre>
+<p>Event N+1 MUST be authorized according to the policy established before the
+transition.</p>
+<p>The new policy becomes effective only after Event N+1 has been successfully
+verified. An application MAY permit Key B to authorize this transition when
+the prior policy already authorizes its use through a verified commitment.</p>
+</section>
+<section id="pre-rotation">
+<h3>Pre-Rotation</h3>
+<p class="issue" id="issue-pre-rotation">Specify the exact committed key bytes,
+commitment lifecycle, activation policy, and recovery behavior. Decide when
+prior commitments authorize a revealing key to sign the transition.</p>
+<p>A Verifiable History MAY support <strong>pre-rotation</strong>.</p>
+<p>Pre-rotation allows a controller to commit to future authorization keys before
+those keys become active.</p>
+<p>For example:</p>
+<pre class="nohighlight example" title="Committing to a future authorization key">Event N
+
+Active:
+  Key A
+
+Commitment:
+  HASH(Key B)
+
+        |
+        v
+
+Event N+1
+
+Reveal:
+  Key B</pre>
+<p>A processor implementing pre-rotation MUST verify that newly activated
+cryptographic material satisfies a commitment established by an earlier valid
+event.</p>
+<p>An application specification using pre-rotation MUST define:</p>
+<ul><li><p>the commitment algorithm;</p>
+</li>
+<li><p>when commitments are established;</p>
+</li>
+<li><p>when committed keys may be revealed;</p>
+</li>
+<li><p>whether multiple future keys may be committed;</p>
+</li>
+<li><p>how unused commitments are handled; and</p>
+</li>
+<li><p>how authorization recovery interacts with pre-rotation.</p>
+</li>
+</ul>
+<p>Pre-rotation enables compromise of an active authorization key to be
+distinguished from possession of previously committed future key material.</p>
+</section>
+<section id="witnesses">
+<h3>Witnesses</h3>
+<p>An event MAY be acknowledged by one or more witnesses.</p>
+<p>A witness produces cryptographic evidence committing to an event identifier.</p>
+<p>Conceptually:</p>
+<pre class="nohighlight example" title="Independent witness acknowledgments">             +--&gt; Witness A
+             |
+Event ------ +--&gt; Witness B
+             |
+             +--&gt; Witness C</pre>
+<p>Witness proofs MUST NOT modify the identifier of the event they witness.</p>
+<p>This permits witnesses to independently acknowledge the same immutable event.</p>
+</section>
+<section id="witness-policies">
+<h3>Witness Policies</h3>
+<p>Applications MAY define witness policies.</p>
+<p>A witness policy MAY specify:</p>
+<ul><li><p>authorized witnesses;</p>
+</li>
+<li><p>threshold requirements;</p>
+</li>
+<li><p>witness rotation;</p>
+</li>
+<li><p>witness proof mechanisms;</p>
+</li>
+<li><p>timing requirements; and</p>
+</li>
+<li><p>whether witnessing is required or advisory.</p>
+</li>
+</ul>
+<p>For example:</p>
+<pre class="nohighlight example" title="Two-of-three witness policy">Witnesses:
+  A
+  B
+  C
+
+Threshold:
+  2</pre>
+<p>In this example, an event is considered sufficiently witnessed when valid proofs from at least
+two distinct authorized witnesses are present.</p>
+<p>Witness policy changes MUST themselves occur through valid history operations.</p>
+<p>The application specification MUST define which witness policy applies to a
+policy-changing event, including any requirement for the old set, the new set,
+or both. A processor MUST count distinct authorized witnesses, not the number
+of signatures, when checking a threshold. Witness evidence MUST NOT substitute
+for required controller authorization or operation validation.</p>
+<p class="issue" id="issue-witness-transition">Define a common witness profile:
+policy activation, rotation handover, receipt representation, threshold counting,
+and the meaning of a witness acknowledgment remain to be standardized.</p>
+</section></section>
+<section id="serialization">
+<h2>Serializations</h2>
+<p class="issue" id="issue-serialization">Select the required exchange format,
+media type, version negotiation, and any log chunking rules. Listing possible
+formats below does not establish support or cross-format hash equivalence.</p>
+<p>A Verifiable History MAY be serialized using any representation defined by a
+compatible Cryptographic Event Log specification.</p>
+<p>Possible serializations include:</p>
+<ul><li><p>JSON;</p>
+</li>
+<li><p>JSON Lines;</p>
+</li>
+<li><p>CBOR; or</p>
+</li>
+<li><p>application-defined binary representations.</p>
+</li>
+</ul>
+<p>Serialization MUST NOT alter the cryptographic meaning of an event.</p>
+<p>Applications requiring interoperable exchange MUST identify the serialization
+formats they support.</p>
+</section>
+<section id="algorithms"><h2>Algorithms</h2><p>The following processing rules define event identification, history continuity, and verification. A selected CEL binding supplies the cryptographic procedures referenced by these algorithms.</p><section id="event-identification">
+<h3>Event Identification</h3>
+<p>Every event MUST carry its own deterministic cryptographic identifier.
+The identifier MUST be calculated using the SCID as the seed for genesis, or
+the immediately preceding event's verified identifier for a successor.</p>
+<p>Following the did:webvh construction model, the hash input is a temporary
+representation in which the event's own identifier is replaced by that seed.
+The published event contains the resulting current-event identifier. It does
+not contain the temporary seed in place of its own identifier.</p>
+<pre class="nohighlight example" title="Conceptual event identifier calculation">seed = SCID                          // genesis
+seed = previousVerifiedEvent.eventId // successor
+input = PREPARE(event, eventId = seed)
+eventId = ENCODE(HASH(CANONICALIZE(PROTECTED(input))))</pre>
+<p>The binding MUST define the exact preparation and protected-field rules,
+canonicalization, byte encoding, digest algorithms, and identifier encoding.
+The genesis commitment procedure MUST define how the SCID is derived before
+it is used as this seed. Witness receipts MUST remain outside the event identity
+calculation.</p>
+<p class="issue" id="issue-event-identity">The current-event identifier and
+SCID-seeded bootstrap are the selected model. Finalize field names, any
+sequence-number component, controller-proof inclusion, unknown-property
+handling, and algorithm transitions. The conceptual formula is not yet an
+implementable hashing algorithm.</p>
+<p>A verifier MUST reconstruct the hash input and calculate the identifier of
+every event, including the final supplied event. It MUST reject a missing
+identifier or a mismatch with the identifier carried by the event.</p>
+<p>Changing cryptographically protected content or the seed MUST change the
+calculated identifier except with negligible cryptographic probability.</p>
+</section>
+<section id="event-chaining">
+<h3>Event Chaining</h3>
+<p>Every non-genesis event MUST commit to the identifier of its immediate
+predecessor through its own event-identifier calculation. VHCEL does not require
+a separate <code>previousEvent</code> property in each serialized event.</p>
+<pre class="nohighlight example" title="Predecessor links">SCID --&gt; E[0].eventId --&gt; E[1].eventId --&gt; E[2].eventId</pre>
+<pre class="nohighlight example" title="Event identifier references">VERIFY_ID(E[0], seed = SCID)
+VERIFY_ID(E[1], seed = E[0].eventId)
+VERIFY_ID(E[2], seed = E[1].eventId)</pre>
+<p>A verifier supplies the previously verified event identifier as the next
+seed and compares the result with the current event's own identifier. A mismatch
+MUST cause verification to fail.</p>
+<p>This detects a broken link within the supplied sequence. An attacker may
+still serve a valid prefix or an alternative authorized branch. The mandatory
+SCID binds the history to genesis; it does not by itself establish freshness
+or uniqueness of succession.</p>
+</section>
+<section id="genesis">
+<h3>Genesis</h3>
+<p>The first event in a Verifiable History is the <strong>genesis event</strong>.
+It MUST establish the history's SCID and sufficient information to initialize
+application state, and MUST satisfy the application's genesis requirements.</p>
+<p>Genesis has no preceding event. The SCID is used as the seed for its event
+identifier calculation. The genesis event's own identifier and its SCID MUST
+both be verified according to the binding.</p>
+</section>
+<section id="history-verification">
+<h3>History Verification</h3>
+<p>A conforming processor MUST perform the following steps, or an equivalent
+algorithm producing the same result. Inputs are an ordered sequence
+<code>E[0..n]</code>, the selected binding and application specification, and
+any independently obtained expected SCID or trusted event commitment.</p>
+<ol class="algorithm">
+  <li>Reject an empty sequence. Validate profile selection against the caller's
+  permitted configurations. Parse events using the selected binding and reject
+  ambiguous or unsupported representations and prohibited algorithms.</li>
+  <li>Require the SCID in <code>E[0]</code>. Reconstruct the genesis commitment,
+  calculate the SCID, and compare it with the supplied value. Reject a mismatch.
+  If the caller supplies an expected SCID, also require it to match.</li>
+  <li>Verify that <code>E[0]</code> satisfies the application's genesis rules.
+  Calculate its event identifier using the verified SCID as the seed. Compare
+  the result with the identifier carried by genesis; reject a missing identifier
+  or a mismatch.</li>
+  <li>Validate the genesis operation and any external data needed to process it.
+  Verify every required genesis authorization proof, pre-rotation constraint,
+  and witness requirement under the application's bootstrap rules. Only then
+  initialize the verified state <code>S[0]</code>.</li>
+  <li>For each event <code>E[i]</code>, where <code>i &gt; 0</code>:
+    <ol>
+      <li>Calculate its identifier using the verified identifier of
+      <code>E[i-1]</code> as the seed, under the binding and algorithm-transition
+      rules permitted by the previously verified state. Compare it with the
+      event's own identifier; reject a missing identifier or a mismatch.</li>
+      <li>Reject any attempt to change the history's SCID. If the binding permits
+      a repeated SCID, require it to match the genesis SCID.</li>
+      <li>Check whether <code>S[i-1]</code> permits a successor, including any
+      deactivation restrictions.</li>
+      <li>Validate the operation and retrieve and verify any external data
+      required to validate or apply it.</li>
+      <li>Verify required cryptographic proofs, their purpose and context, and
+      authorization using the policy established by <code>S[i-1]</code>.
+      Verify applicable pre-rotation reveals against previously verified commitments.</li>
+      <li>Verify required witness evidence over this event's calculated identifier
+      using the applicable witness policy and transition rules.</li>
+      <li>Apply the application state transition to a candidate state.
+      Commit it as <code>S[i]</code> only after all required checks succeed.</li>
+    </ol>
+  </li>
+  <li>Check any other trusted event commitment at the position and under the
+  rules specified by the application. Reject a mismatch or a missing required
+  commitment.</li>
+  <li>If competing successors are known, apply the application's fork policy.
+  Do not silently select a branch in the absence of such a policy.</li>
+  <li>Return the verified SCID, verified state, calculated identifier of the last
+  supplied event, verified event count, selected binding and application profile,
+  whether verification began at genesis or a checkpoint, the outcome of any
+  expected-SCID check, and application-defined metadata. Distinguish freshness
+  evidence and witness satisfaction from successful chain verification.</li>
+</ol>
+<p>If any required check fails, the processor MUST reject the history as a
+successfully verified result. It MAY return diagnostics or a verified prefix,
+but MUST identify the failure and MUST NOT present that prefix as verification
+of the entire supplied history.</p>
+<p>A successful result describes the supplied sequence. A processor MUST NOT
+claim global uniqueness, absence of undisclosed forks, or freshness without
+additional evidence defined by the application.</p>
+</section>
+<section id="partial-histories">
+<h3>Partial Histories</h3>
+<p>Applications MAY permit verification from a trusted checkpoint rather than from
+genesis.</p>
+<p>An authenticated checkpoint MUST bind:</p>
+<ul><li><p>the verified event identifier at which verification begins;</p>
+</li>
+<li><p>sufficient application state to continue processing subsequent events, including
+authorization policy, active commitments, witness policy, and deactivation status; and
+</p></li><li><p>the mandatory SCID and the applicable binding and application profile.</p>
+</li>
+</ul>
+<p>Checkpoint verification starts with the authenticated checkpoint state and
+continues with the successor checks in <a href="#history-verification"></a>.
+It does not rerun genesis processing on the first supplied successor. The
+checkpoint supplies the authenticated SCID and event identifier used to resume
+verification. Any expected SCID MUST match the checkpoint SCID; accepting a
+checkpoint does not independently verify the genesis derivation.</p>
+<p>A processor MUST NOT represent a history verified only from a checkpoint as
+having been independently verified from genesis.</p>
+</section>
+<section id="forks">
+<h3>Forks</h3>
+<p>Two valid events MAY reference the same previous event:</p>
+<pre class="nohighlight example" title="Competing successors">             +--&gt; Event B
+             |
+Event A -----+
+             |
+             +--&gt; Event C</pre>
+<p>This condition constitutes a <strong>fork</strong>.</p>
+<p>The core Verifiable History specification does not define a universal mechanism
+for choosing between competing branches.</p>
+<p>An application specification MUST define its fork policy if forks are possible.</p>
+<p>A fork policy MAY:</p>
+<ul><li><p>reject all forks;</p>
+</li>
+<li><p>select a branch according to application-defined consensus;</p>
+</li>
+<li><p>require witness evidence;</p>
+</li>
+<li><p>use external consensus;</p>
+</li>
+<li><p>preserve multiple branches.</p>
+</li>
+</ul>
+<p>Processors MUST NOT silently select a branch unless the applicable application
+specification defines how that selection is made.</p>
+</section>
+<section id="deactivation">
+<h3>Deactivation</h3>
+<p>An application MAY define an operation that permanently or temporarily prevents
+further state transitions.</p>
+<p>A deactivation operation MUST be authorized according to the state immediately
+preceding the deactivation event.</p>
+<p>An application specification MUST define whether events following deactivation
+are permitted.</p>
+</section></section>
+<section id="application-specifications">
+<h2>Application Specifications</h2>
+<p>An application specification conforming to this specification MUST define:</p>
+<ol><li><p>the application state model;</p>
+</li>
+<li><p>valid operations;</p>
+</li>
+<li><p>genesis processing consistent with the mandatory SCID derivation and event-identifier rules;</p>
+</li>
+<li><p>state transition processing;</p>
+</li>
+<li><p>authorization requirements, if applicable;</p>
+</li>
+<li><p>witness requirements, if applicable;</p>
+</li>
+<li><p>pre-rotation requirements, if applicable;</p>
+</li>
+<li><p>fork handling;</p>
+</li>
+<li><p>deactivation semantics, if applicable;</p>
+</li>
+<li><p>supported CEL serialization and cryptographic mechanisms; and</p>
+</li>
+<li><p>discovery mechanisms, if required.</p>
+</li>
+</ol>
+<p>Application specifications SHOULD reuse standardized profiles rather than
+defining equivalent mechanisms independently.</p>
+<section id="discovery">
+<h3>Discovery</h3>
+<p>Discovery is explicitly separate from verification.</p>
+<p>An application specification MAY define mechanisms for discovering a
+Verifiable History.</p>
+<p>For example:</p>
+<pre class="nohighlight example" title="Discovery mechanisms">identifier
+    |
+    +--&gt; HTTPS
+    +--&gt; DNS
+    +--&gt; DHT
+    +--&gt; content-addressed network
+    +--&gt; peer-to-peer protocol</pre>
+<p>A discovery mechanism MUST NOT be considered authoritative merely because it
+returned a history.</p>
+<p>The returned history MUST still satisfy Verifiable History verification.</p>
+</section>
+<section id="did-application-profile" class="informative">
+<h3>DID Application Profile</h3>
+<p>A DID method MAY use Verifiable History to represent changes to a DID Document.</p>
+<p>Such a profile could map:</p>
+<table class="simple"><caption>Verifiable History concepts in a DID profile</caption><thead><tr><th scope="col">Verifiable History</th><th scope="col">DID profile</th></tr></thead>
+<tbody><tr><td>History</td><td>DID history</td></tr>
+<tr><td>Genesis</td><td>DID creation</td></tr>
+<tr><td>State</td><td>DID Document</td></tr>
+<tr><td>Update operation</td><td>DID update</td></tr>
+<tr><td>Authorization</td><td>DID controller authority</td></tr>
+<tr><td>Deactivation</td><td>DID deactivation</td></tr>
+<tr><td>SCID</td><td>DID self-certifying identifier</td></tr></tbody></table>
+<p>The DID profile SHOULD NOT redefine event chaining, hashing, witnessing, or
+other mechanisms already defined by this specification or CEL profiles.</p>
+</section>
+<section id="did-webvh-application" class="informative">
+<h3>did:webvh Application</h3>
+<p class="note">This is a proposed decomposition of [[?DID-WEBVH]]. Existing
+<code>did:webvh</code> logs retain their original hashing and proof semantics.
+Renaming fields or wrapping an entry in CEL does not preserve its signatures.</p>
+<p>A future <code>did:webvh</code> profile could be expressed as a Verifiable History application combining:</p>
+<pre class="nohighlight example" title="Proposed did:webvh profile composition">Verifiable History
+       |
+       +-- CEL event representation
+       |
+       +-- Self-Certifying History Identifier
+       |
+       +-- Authorization
+       |
+       +-- Pre-Rotation
+       |
+       +-- Witness Policy
+       |
+       +-- DID state machine
+       |
+       +-- Web discovery</pre>
+<p>The <code>did:webvh</code> specification remains responsible for:</p>
+<ul><li><p>DID syntax;</p>
+</li>
+<li><p>DID-to-HTTPS transformation;</p>
+</li>
+<li><p>DID Document semantics;</p>
+</li>
+<li><p>web-based discovery;</p>
+</li>
+<li><p>DID portability;</p>
+</li>
+<li><p>DID URL behavior; and</p>
+</li>
+<li><p>DID-specific processing.</p>
+</li>
+</ul>
+<p>Generic history mechanics SHOULD be defined by this specification rather than
+independently by the DID method.</p>
+</section></section>
+<section id="security-considerations">
+<h2>Security Considerations</h2>
+<section id="hash-function-security">
+<h3>Hash Function Security</h3>
+<p>The integrity of a Verifiable History depends upon the collision and
+second-preimage resistance of the selected hash function.</p>
+<p>Applications MUST define acceptable cryptographic algorithms.</p>
+<p>Applications SHOULD provide a migration mechanism for histories that use
+algorithms that later become unsuitable.</p>
+</section>
+
+<section id="authorization-key-compromise">
+<h3>Authorization Key Compromise</h3>
+<p>Compromise of an active authorization key may permit unauthorized events to be
+created.</p>
+<p>Applications requiring stronger compromise resistance SHOULD use pre-rotation,
+witnesses, or both.</p>
+<p>Pre-rotation does not prevent an attacker who possesses both the active key and
+the required future key material from authorizing subsequent transitions.</p>
+<p>Applications SHOULD define recovery procedures appropriate to their threat
+model.</p>
+</section>
+
+<section id="history-truncation">
+<h3>History Truncation</h3>
+<p>Hash chaining detects modification of known history but does not inherently
+prove that a verifier has received the latest event.</p>
+<p>Applications requiring freshness guarantees MUST define an additional
+mechanism.</p>
+<p>Such mechanisms MAY include:</p>
+<ul><li><p>witness receipts;</p>
+</li>
+<li><p>trusted checkpoints;</p>
+</li>
+<li><p>independently published event identifiers;</p>
+</li>
+<li><p>transparency services;</p>
+</li>
+<li><p>periodic anchors;</p>
+</li>
+<li><p>application-defined heartbeat events; or</p>
+</li>
+<li><p>comparison with multiple independent sources.</p>
+</li>
+</ul>
+<p>A verifier MUST NOT infer that a valid terminal event is the most recent event
+solely because the supplied history is internally consistent.</p>
+</section>
+
+<section id="history-suppression">
+<h3>History Suppression</h3>
+<p>An attacker controlling a discovery or storage mechanism may suppress valid
+events while continuing to serve an older valid prefix of the history.</p>
+<p>Cryptographic event chaining alone does not detect this condition.</p>
+<p>Applications concerned with suppression SHOULD permit verifiers to obtain
+history information from independent sources or require freshness evidence from
+witnesses or other external mechanisms.</p>
+</section>
+
+<section id="fork-attacks">
+<h3>Fork Attacks</h3>
+<p>A controller possessing valid authorization material may produce multiple
+events referencing the same predecessor.</p>
+<p>Each branch may be individually cryptographically valid.</p>
+<p>Hash chaining therefore provides tamper evidence but does not, by itself,
+provide consensus or uniqueness of succession.</p>
+<p>Applications in which forks are security-significant MUST define a deterministic
+fork policy or an external mechanism capable of identifying the accepted
+branch.</p>
+<p>Witnessing MAY reduce the ability to present inconsistent branches to different
+verifiers, but witness behavior and threshold assumptions MUST be considered
+part of the application's trust model.</p>
+</section>
+
+<section id="equivocation">
+<h3>Equivocation</h3>
+<p>A controller, witness, or publication service may present different valid
+histories to different parties.</p>
+<p>Applications requiring detection of equivocation SHOULD support exchange or
+publication of event identifiers, witness receipts, checkpoints, or other
+cryptographic commitments between independent observers.</p>
+<p>A witness system does not prevent equivocation unless the witness protocol or
+policy requires witnesses to detect or refuse conflicting histories.</p>
+</section>
+
+<section id="witness-compromise-and-collusion">
+<h3>Witness Compromise and Collusion</h3>
+<p>Witnesses are not inherently trusted authorities.</p>
+<p>A compromised witness may sign an event it should not have acknowledged.</p>
+<p>A set of colluding witnesses may acknowledge conflicting or unreviewed events
+and satisfy a numerical threshold. This does not make a history that fails
+authorization, integrity, or state transition checks valid.</p>
+<p>Applications MUST select witness thresholds and witness independence assumptions
+consistent with their threat model.</p>
+<p>Where practical, witness sets SHOULD be chosen so that compromise of a single
+administrative, infrastructure, or cryptographic domain does not satisfy the
+required threshold.</p>
+</section>
+
+<section id="replay">
+<h3>Replay</h3>
+<p>A cryptographically valid event copied from one context into another may remain
+cryptographically valid unless the signed or hashed event data binds the event
+to the intended history and application context.</p>
+<p>Applications MUST ensure that authorization proofs cannot be replayed across
+different histories or incompatible application contexts.</p>
+<p>This binding SHOULD include sufficient context such as:</p>
+<ul><li><p>the History Identifier;</p>
+</li>
+<li><p>the previous event identifier;</p>
+</li>
+<li><p>the operation;</p>
+</li>
+<li><p>the applicable application or protocol identifier; and</p>
+</li>
+<li><p>any domain separation required by the cryptographic proof mechanism.</p>
+</li>
+</ul>
+</section>
+
+<section id="cross-protocol-and-cross-application-attacks">
+<h3>Cross-Protocol and Cross-Application Attacks</h3>
+<p>Cryptographic material used with multiple protocols may create ambiguity about
+what was authorized by a signature or proof.</p>
+<p>Applications SHOULD use cryptographic domain separation and SHOULD avoid signing
+representations that could be interpreted as valid events under a different
+protocol.</p>
+<p>Proof verification MUST include any purpose, domain, challenge, context, or
+equivalent fields required by the selected proof mechanism.</p>
+</section>
+
+<section id="canonicalization">
+<h3>Canonicalization</h3>
+<p>Event identifiers depend upon deterministic canonicalization.</p>
+<p>Differences in parsing, Unicode handling, number representation, property
+ordering, omitted values, duplicate properties, or other serialization details
+can cause processors to calculate different event identifiers.</p>
+<p>The applicable CEL serialization MUST define a single deterministic procedure
+for producing cryptographically protected bytes.</p>
+<p>Processors MUST reject inputs that cannot be represented unambiguously by that
+procedure.</p>
+</section>
+
+<section id="algorithm-confusion">
+<h3>Algorithm Confusion</h3>
+<p>A processor MUST NOT select cryptographic algorithms solely from untrusted event
+content without validating that those algorithms are permitted by the
+applicable application specification or profile.</p>
+<p>Algorithm identifiers MUST be interpreted unambiguously.</p>
+<p>Processors MUST reject unsupported or prohibited algorithms rather than
+silently substituting another algorithm.</p>
+</section>
+
+<section id="algorithm-downgrade">
+<h3>Algorithm Downgrade</h3>
+<p>An attacker may attempt to transition a history from a strong cryptographic
+algorithm to a weaker permitted algorithm.</p>
+<p>Applications supporting cryptographic agility MUST define who may authorize
+algorithm changes and which transitions are permitted.</p>
+<p>A cryptographic algorithm transition SHOULD be authorized under the security
+requirements applicable before the transition takes effect.</p>
+</section>
+
+<section id="pre-rotation-commitment-security">
+<h3>Pre-Rotation Commitment Security</h3>
+<p>The security of pre-rotation depends on the hiding and binding properties
+required by the selected commitment construction.</p>
+<p>A commitment scheme MUST make it computationally infeasible to substitute
+different future authorization material for the material originally committed.</p>
+<p>Applications SHOULD consider whether exposing a hash of predictable public key
+material permits unwanted correlation or precomputation.</p>
+<p>Where this is a concern, the commitment construction MAY incorporate an
+application-defined nonce or other binding material.</p>
+</section>
+
+<section id="compromise-of-future-key-material">
+<h3>Compromise of Future Key Material</h3>
+<p>Pre-rotation protects against some forms of compromise of an active key, but it
+may introduce security dependencies on future key material that must be
+protected before activation.</p>
+<p>If committed future private key material is compromised before it becomes
+active, an attacker may be able to assume control when that material is later
+revealed.</p>
+<p>Applications using pre-rotation SHOULD provide a mechanism to supersede unused
+commitments when the current authorization policy remains uncompromised.</p>
+</section>
+
+<section id="genesis-substitution">
+<h3>Genesis Substitution</h3>
+<p>When a verifier does not possess an expected History Identifier or another
+trusted commitment to genesis, an attacker may supply an entirely different,
+internally valid history.</p>
+<p>A self-consistent history is not necessarily the intended history.</p>
+<p>Applications MUST define how a verifier obtains or establishes the expected
+identity of a history when identity matters.</p>
+<p>The mandatory SCID provides this binding when the expected value is securely
+obtained. Recomputing an attacker-supplied SCID establishes internal consistency,
+not that the supplied history is the intended one.</p>
+</section>
+
+<section id="checkpoint-trust">
+<h3>Checkpoint Trust</h3>
+<p>Verification beginning from a checkpoint does not independently establish the
+validity of events preceding that checkpoint.</p>
+<p>The security of partial-history verification therefore depends upon the
+authenticity and integrity of the checkpoint and the state associated with it.</p>
+<p>Applications using checkpoints MUST define how checkpoints are authenticated.</p>
+<p>Processors SHOULD expose whether verification began at genesis or from a
+checkpoint so that relying parties can distinguish the resulting assurance.</p>
+</section>
+
+<section id="external-data-availability">
+<h3>External Data Availability</h3>
+<p>A cryptographic digest can establish the integrity of external data but cannot
+guarantee its availability.</p>
+<p>An event may remain cryptographically valid even when referenced data can no
+longer be retrieved.</p>
+<p>Applications requiring long-term availability SHOULD define replication,
+archival, or persistence requirements separately from cryptographic integrity.</p>
+</section>
+
+<section id="external-data-substitution">
+<h3>External Data Substitution</h3>
+<p>Processors MUST verify externally retrieved data against the digest committed
+by the event before using that data.</p>
+<p>A location, URL, filename, media type, or transport security property MUST NOT
+be treated as a substitute for digest verification when a cryptographic
+commitment is present.</p>
+</section>
+
+<section id="confidentiality">
+<h3>Confidentiality</h3>
+<p>A Verifiable History provides integrity and authenticity properties but does not
+provide confidentiality.</p>
+<p>Event contents, cryptographic identifiers, witness information, timestamps,
+authorization keys, and external data references may reveal information even
+when application data is encrypted or stored externally.</p>
+<p>Applications handling sensitive information SHOULD minimize information exposed
+in the log and SHOULD consider the correlation properties of stable identifiers
+and hashes.</p>
+</section>
+
+<section id="metadata-and-correlation">
+<h3>Metadata and Correlation</h3>
+<p>Persistent identifiers, timestamps, update frequency, witness identities,
+authorization changes, and external data references may enable correlation
+across services or contexts.</p>
+<p>Applications SHOULD consider whether every piece of metadata needs to be
+cryptographically committed or publicly distributed.</p>
+<p>Transport privacy does not eliminate correlation that arises from the history
+itself.</p>
+</section>
+
+<section id="timestamp-reliability">
+<h3>Timestamp Reliability</h3>
+<p>Unless an application defines a trusted timestamping mechanism, an event
+timestamp represents an asserted time rather than independently proven time.</p>
+<p>Cryptographic event ordering establishes causal succession within a history but
+does not, by itself, establish the real-world time at which an event occurred.</p>
+<p>Applications MUST NOT use untrusted event timestamps as security-critical time
+evidence unless additional validation is defined.</p>
+</section>
+
+<section id="resource-exhaustion">
+<h3>Resource Exhaustion</h3>
+<p>A malicious or malformed history may contain a very large number of events,
+large operations, deeply nested data, expensive proof suites, excessive witness
+proofs, or external references intended to consume processor resources.</p>
+<p>Implementations SHOULD impose appropriate limits on:</p>
+<ul><li><p>history size;</p>
+</li>
+<li><p>individual event size;</p>
+</li>
+<li><p>nesting depth;</p>
+</li>
+<li><p>number of proofs;</p>
+</li>
+<li><p>number of witnesses;</p>
+</li>
+<li><p>cryptographic work;</p>
+</li>
+<li><p>external retrievals; and</p>
+</li>
+<li><p>processing time.</p>
+</li>
+</ul>
+<p>A processor SHOULD fail safely when implementation limits are exceeded.</p>
+</section>
+
+<section id="parser-and-serialization-security">
+<h3>Parser and Serialization Security</h3>
+<p>Implementations MUST treat serialized histories as untrusted input.</p>
+<p>Parsers MUST reject duplicate object member names in JSON input used for
+cryptographic processing, before a parser can silently discard duplicate values.</p>
+<p>Implementations SHOULD avoid parser differentials between the representation
+used for validation and the representation used for hashing or proof
+verification.</p>
+<p>Cryptographic verification MUST operate on the exact semantic representation
+defined by the applicable CEL specification.</p>
+</section>
+
+<section id="deactivation-and-recovery">
+<h3>Deactivation and Recovery</h3>
+<p>Permanent deactivation may prevent recovery after accidental or malicious
+deactivation.</p>
+<p>Applications defining irreversible deactivation SHOULD make that property
+explicit and SHOULD consider whether stronger authorization, delay, witnessing,
+or other safeguards are appropriate.</p>
+<p>Recovery mechanisms, when supported, MUST NOT permit an unauthorized party to
+bypass previously established authorization or pre-rotation requirements.</p>
+</section>
+
+<section id="trust-in-discovery">
+<h3>Trust in Discovery</h3>
+<p>HTTPS, DNS, distributed storage, peer-to-peer systems, registries, and other
+discovery mechanisms may provide useful availability or origin information but
+are not substitutes for history verification.</p>
+<p>A compromised discovery mechanism may redirect a verifier to an invalid,
+truncated, or unrelated history.</p>
+<p>Processors MUST apply the same cryptographic verification regardless of the
+source from which a history was obtained.</p>
+</section>
+
+<section id="implementation-errors">
+<h3>Implementation Errors</h3>
+<p>The security guarantees of Verifiable History depend on correct implementation
+of canonicalization, hashing, proof verification, state transition processing,
+authorization, and application-specific policy.</p>
+<p>Implementations SHOULD include test vectors covering:</p>
+<ul><li><p>valid histories;</p>
+</li>
+<li><p>modified events;</p>
+</li>
+<li><p>deleted events;</p>
+</li>
+<li><p>inserted events;</p>
+</li>
+<li><p>reordered events;</p>
+</li>
+<li><p>invalid predecessor references;</p>
+</li>
+<li><p>unauthorized transitions;</p>
+</li>
+<li><p>invalid pre-rotation reveals;</p>
+</li>
+<li><p>insufficient witness thresholds;</p>
+</li>
+<li><p>forks;</p>
+</li>
+<li><p>malformed canonical representations; and</p>
+</li>
+<li><p>cryptographic algorithm transitions.</p>
+</li>
+</ul>
+<p>Interoperability testing SHOULD include histories produced by independent
+implementations.</p>
+</section>
+</section>
+<section id="privacy-considerations">
+<h2>Privacy Considerations</h2>
+<p>Verifiable Histories are often append-only and may be widely replicated.</p>
+<p>Information written to a history may therefore be difficult or impossible to
+remove from all copies.</p>
+<p>Applications SHOULD avoid including personal or confidential data directly in
+events unless permanent disclosure is acceptable.</p>
+<p>Where practical, applications SHOULD commit to externally stored data rather
+than embedding sensitive data in the history itself.</p>
+<p>The use of cryptographic hashes does not necessarily make personal data
+anonymous. Hashes of predictable or low-entropy data may permit dictionary
+attacks or correlation.</p>
+<p>Applications SHOULD consider data minimization, selective disclosure, encrypted
+external storage, and appropriate commitment constructions when processing
+sensitive information.</p>
+</section>
+<section id="log-format-comparisons" class="informative">
+<h2>Log Format Comparisons</h2>
+<p>These comparisons describe the VHCEL draft alongside <code>did:webvh</code>
+v1.0 and the CEL v0.1 draft reviewed on 13 September 2026. They distinguish
+published representations from VHCEL's conceptual model. A similar field name
+does not establish equivalent protected bytes or compatible proofs.</p>
+
+<section id="comparison-didwebvh">
+<h3>Comparison with the did:webvh Log</h3>
+<p><code>did:webvh</code> packages history verification with a DID-specific state
+machine. VHCEL proposes reusable history processing with application profiles.
+The <code>did:webvh</code> column summarizes [[?DID-WEBVH]], particularly its
+<a href="https://identity.foundation/didwebvh/v1.0/#entry-hash-generation-and-verification">entry-hash procedure</a>,
+<a href="https://identity.foundation/didwebvh/v1.0/#authorized-keys">authorization rules</a>, and
+<a href="https://identity.foundation/didwebvh/v1.0/#did-witnesses">witness model</a>.</p>
+<table class="simple comparison-table">
+<caption>did:webvh v1.0 and the current VHCEL proposal</caption>
+<thead><tr><th scope="col">Aspect</th><th scope="col">did:webvh log</th><th scope="col">VHCEL draft</th></tr></thead>
+<tbody>
+<tr><th scope="row">Container</th><td><code>did.jsonl</code>: one JSON object per line.</td><td>An ordered sequence of events; exchange serialization remains open.</td></tr>
+<tr><th scope="row">Entry identity</th><td><code>versionId</code> combines a sequence number and entry hash.</td><td>Each event carries its own <code>eventId</code>; exact encoding and any sequence number remain open.</td></tr>
+<tr><th scope="row">Predecessor</th><td>No separate field. Hashing substitutes the prior <code>versionId</code>; genesis substitutes the SCID.</td><td>The same seed-substitution model: SCID for genesis, preceding event ID for successors. No separate predecessor field.</td></tr>
+<tr><th scope="row">Hashing</th><td>JCS, SHA-256 multihash, base58btc encoding; excludes <code>proof</code>.</td><td>Protected fields, canonicalization, algorithms, and encoding require a CEL binding.</td></tr>
+<tr><th scope="row">Time</th><td><code>versionTime</code> records controller-asserted time.</td><td>An optional timestamp, illustrated as <code>time</code>.</td></tr>
+<tr><th scope="row">Payload</th><td><code>state</code> contains the resulting DID Document.</td><td><code>operation</code> describes a transition; the application defines resulting state.</td></tr>
+<tr><th scope="row">Policy</th><td><code>parameters</code> carries method version, update keys, commitments, and witness policy.</td><td>Equivalent policies belong to named profiles; field mapping remains open.</td></tr>
+<tr><th scope="row">Genesis identity</th><td>A mandatory SCID binds genesis using a placeholder-based derivation.</td><td>A mandatory SCID identifies the history; the common derivation details remain open.</td></tr>
+<tr><th scope="row">Authorization</th><td>Entry proofs use <code>eddsa-jcs-2022</code> and active <code>updateKeys</code>.</td><td>The application selects authorization rules and proof mechanisms.</td></tr>
+<tr><th scope="row">Pre-rotation</th><td><code>nextKeyHashes</code> commits future keys; qualifying current-entry keys authorize pre-rotated updates.</td><td>Prior policy can authorize a revealing key; the commitment profile remains open.</td></tr>
+<tr><th scope="row">Witnessing</th><td>Distinct-witness thresholds; receipts in <code>did-witness.json</code>.</td><td>Receipts do not change event identity; representation and policy handover remain open.</td></tr>
+</tbody>
+</table>
+<p>The following sketches show the same kind of DID update. Values in angle
+brackets are placeholders, proofs are abbreviated, and the examples are not
+valid cryptographic test vectors. The VHCEL sketch does not define a DID profile.</p>
+<div class="comparison-examples">
+<pre class="example language-json" title="did:webvh update entry (schematic)">{
+  "versionId": "2-&lt;entry-hash&gt;",
+  "versionTime": "2026-09-13T08:00:00Z",
+  "parameters": {},
+  "state": {
+    "id": "did:webvh:&lt;scid&gt;:example.com"
+  },
+  "proof": [
+    { "proofValue": "&lt;controller-proof&gt;" }
+  ]
+}</pre>
+<pre class="example language-json" title="VHCEL update event (conceptual)">{
+  "eventId": "&lt;current-event-id&gt;",
+  "time": "2026-09-13T08:00:00Z",
+  "operation": {
+    "type": "update",
+    "data": {
+      "id": "did:webvh:&lt;scid&gt;:example.com"
+    }
+  },
+  "proof": [
+    { "proofValue": "&lt;controller-proof&gt;" }
+  ]
+}</pre>
+</div>
+<p>The proposed mapping is <code>versionId</code> to the event's own identifier,
+<code>parameters.scid</code> to the required genesis SCID, <code>state</code> to application operation data,
+<code>versionTime</code> to event time, and <code>parameters</code> to profile-defined
+policy metadata. It is not a conversion algorithm. A binding still needs to say
+where policy changes are represented and how the operation produces the DID state.</p>
+<p class="note">Changing an entry's shape changes the material used to identify
+and sign it. A conversion would need new cryptographic identifiers and proofs,
+or a binding that explicitly preserves and verifies the original signed entry.
+VHCEL follows did:webvh's use of the current event's own identifier and a
+SCID-based genesis bootstrap. Shared construction does not imply identical
+canonical bytes, digest encoding, or signatures.</p>
+</section>
+
+<section id="comparison-cel">
+<h3>Comparison with CEL</h3>
+<p>CEL supplies a concrete event-log representation. VHCEL adds a proposed
+history-processing contract and requirements for profiles. The CEL column
+summarizes [[?CEL]]; open VHCEL choices are not claims that CEL already defines
+those same mechanisms.</p>
+<table class="simple comparison-table">
+<caption>CEL v0.1 and the current VHCEL proposal</caption>
+<thead><tr><th scope="col">Aspect</th><th scope="col">CEL draft</th><th scope="col">VHCEL draft</th></tr></thead>
+<tbody>
+<tr><th scope="row">Container</th><td><code>log</code> holds entries containing <code>event</code> and witness <code>proof</code> values.</td><td>No log envelope is selected; current examples show conceptual events.</td></tr>
+<tr><th scope="row">Predecessor</th><td><code>event.previousEvent</code> references the preceding event's digest.</td><td>Carries the current <code>eventId</code>; its hash input uses the preceding verified ID as the seed.</td></tr>
+<tr><th scope="row">Digest representation</th><td>References use base64url multibase-encoded SHA-256 multihashes.</td><td>No baseline digest encoding or complete event-hashing procedure is selected.</td></tr>
+<tr><th scope="row">Operation</th><td><code>operation.type</code>: <code>create</code>, <code>update</code>, <code>deactivate</code>, or an extension.</td><td>These are illustrative types; the application defines supported operations.</td></tr>
+<tr><th scope="row">Application data</th><td><code>operation.data</code> or <code>operation.dataReference</code>.</td><td>Embedded and external data are supported conceptually; operation syntax is application-defined.</td></tr>
+<tr><th scope="row">External reference</th><td><code>digestMultibase</code>, with optional <code>url</code> and <code>mediaType</code>.</td><td>Digest verification is required before dependent state is accepted; reference syntax remains open.</td></tr>
+<tr><th scope="row">Proof roles</th><td>Outer proofs witness events; examples place controller proofs in operation data.</td><td>Controller authorization and witnessing are distinct checks. Their wire placement remains open.</td></tr>
+<tr><th scope="row">Application contract</th><td>Applications define control, state construction, and witness-proof validity.</td><td>Profiles also specify bootstrap, pre-rotation, fork handling, deactivation, and required bindings.</td></tr>
+<tr><th scope="row">History identity and rotation</th><td>No generic SCID or pre-rotation profile; a DID application example derives an identifier.</td><td>A SCID is mandatory for every history. Pre-rotation remains a profile capability.</td></tr>
+<tr><th scope="row">Chunking</th><td><code>previousLog</code> links log chunks.</td><td>No chunking format selected. Trusted checkpoints are separately described.</td></tr>
+<tr><th scope="row">Verification result</th><td>The displayed verification algorithm checks proofs and returns <code>true</code>.</td><td>Returns SCID, state, final supplied event ID, event count, profile identity, and verification scope.</td></tr>
+</tbody>
+</table>
+<p>These sketches highlight the envelope boundary. All proofs and digest values
+are placeholders. Both VHCEL update sketches assume a preceding genesis event
+that establishes the mandatory SCID. The VHCEL <code>proof</code> shown below illustrates controller
+authorization; it does not correspond to CEL's outer witness-proof array.</p>
+<div class="comparison-examples">
+<pre class="example language-json" title="CEL log with an update (schematic)">{
+  "log": [{
+    "event": {
+      "previousEvent": "&lt;event-1-digest&gt;",
+      "operation": {
+        "type": "update",
+        "data": {
+          "name": "Updated object",
+          "proof": {
+            "proofValue": "&lt;controller-proof&gt;"
+          }
+        }
+      }
+    },
+    "proof": [{
+      "proofValue": "&lt;witness-proof&gt;"
+    }]
+  }]
+}</pre>
+<pre class="example language-json" title="VHCEL event without a selected envelope (conceptual)">{
+  "eventId": "&lt;current-event-id&gt;",
+  "operation": {
+    "type": "update",
+    "data": {
+      "name": "Updated object"
+    }
+  },
+  "proof": [{
+    "proofValue": "&lt;controller-proof&gt;"
+  }]
+}</pre>
+</div>
+<p>Reusing CEL's outer envelope is a candidate binding for VHCEL. The event model
+would need to accommodate mandatory SCIDs and current-event identifiers rather
+than only an explicit <code>previousEvent</code> field. Exact hash input,
+controller-proof coverage, policy representation, and witness-policy activation
+rules remain to be specified; this is not an assertion of CEL wire compatibility.</p>
+<p class="note">Log chunking and checkpoint verification solve different problems.
+A chunk boundary partitions stored history; a trusted checkpoint supplies
+an authenticated starting state for verification that omits earlier events.</p>
+</section>
+</section>
+
+<section id="iana-considerations" class="appendix">
+<h2>IANA Considerations</h2>
+<p>This specification has no IANA actions at this time.</p>
+</section>
+<section id="future-work" class="appendix informative">
+<h2>Future Work</h2>
+<p>Future specifications or profiles may define:</p>
+<ul><li><p>the exact derivation and encoding of the required Self-Certifying History Identifier;</p>
+</li>
+<li><p>standardized authorization policies;</p>
+</li>
+<li><p>standardized pre-rotation commitments;</p>
+</li>
+<li><p>threshold witness profiles;</p>
+</li>
+<li><p>transparency and freshness mechanisms;</p>
+</li>
+<li><p>checkpoint formats;</p>
+</li>
+<li><p>compact binary representations;</p>
+</li>
+<li><p>selective disclosure mechanisms; and</p>
+</li>
+<li><p>application-specific profiles including DIDs and digital assets.</p>
+</li>
+</ul>
+</section>
+<section id="alignment-work" class="appendix informative">
+<h2>Alignment Work</h2>
+<p class="issue" id="issue-compatibility">Before claiming compatibility, map a real
+<code>did:webvh</code> history into the selected CEL representation and perform
+the reverse exercise. Compare protected bytes, identifiers, proof coverage,
+SCID derivation, key transitions, and witness policy activation. Record which
+properties are preserved and which would require a newly signed history.</p>
+<p>The first interoperability milestone is a named binding, a minimal application
+profile, and independently verified test vectors covering genesis, update,
+rotation, witnessing, deactivation, forks, and malformed inputs.</p>
+</section>
+<section id="issue-summary" class="appendix"></section></body></html>

@@ -1,0 +1,14 @@
+{
+  "name": "vhcel-spec",
+  "version": "0.1.0",
+  "private": true,
+  "engines": { "node": ">=24" },
+  "description": "Verifiable History with Cryptographic Event Log specification",
+  "scripts": {
+    "start": "python3 -m http.server 8080 --bind 127.0.0.1",
+    "build": "mkdir -p build && respec --src index.html --out build/index.html --localhost --port 8081 --use-local --haltonerror --haltonwarn --timeout 60"
+  },
+  "devDependencies": {
+    "respec": "37.4.0"
+  }
+}
