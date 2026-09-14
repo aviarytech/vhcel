@@ -429,10 +429,12 @@ describe the processing relationship, not concrete cryptographic algorithms.</p>
 with the value carried by genesis. It MUST reject a missing or mismatched SCID.
 If the caller supplies an expected SCID, the processor MUST also compare against
 that value. Internal consistency alone does not establish that a supplied history
-is the history the caller intended.</p>
+is the history the caller intended. See <a href="#genesis-substitution"></a>
+for concrete attacks this expected-identity check addresses and its limits.</p>
 <p class="issue" id="issue-scid">SCIDs are mandatory. Finalize the common genesis
-commitment procedure, including protected fields, domain separation,
-canonicalization, encoding, and deterministic treatment of the SCID field and
+commitment procedure, including coverage of initial state, authorization
+material, and bootstrap policies; domain separation; canonicalization; encoding;
+and deterministic treatment of the SCID field and
 any embedded SCID references to avoid circular hash input. Placeholder processing
 is one candidate for genesis derivation; it does not require replacing CEL's
 <code>previousEvent</code> linkage. The exact derivation algorithm remains to be
@@ -725,6 +727,11 @@ any independently obtained expected SCID or trusted event commitment.</p>
 successfully verified result. It MAY return diagnostics or a verified prefix,
 but MUST identify the failure and MUST NOT present that prefix as verification
 of the entire supplied history.</p>
+<p>The returned state and metadata describe the scope of verification. They do
+not prescribe a programming-language API or a serialized result format. A
+boolean can answer a precisely scoped validation question, but does not by
+itself communicate the verified state or whether verification began at genesis
+or a trusted checkpoint.</p>
 <p>A successful result describes the supplied sequence. A processor MUST NOT
 claim global uniqueness, absence of undisclosed forks, or freshness without
 additional evidence defined by the application.</p>
@@ -1074,16 +1081,61 @@ commitments when the current authorization policy remains uncompromised.</p>
 </section>
 
 <section id="genesis-substitution">
-<h3>Genesis Substitution</h3>
-<p>When a verifier does not possess an expected History Identifier or another
-trusted commitment to genesis, an attacker may supply an entirely different,
-internally valid history.</p>
-<p>A self-consistent history is not necessarily the intended history.</p>
+<h3>Genesis and Whole-History Substitution</h3>
+<p>An attacker controlling a host or discovery service can replace an entire
+history with a different, internally consistent history. The replacement can
+contain valid hash links and valid signatures made with the attacker's own keys.
+Those checks alone do not establish that it is the history the caller intended.</p>
+<p>A securely obtained expected SCID binds the requested history to its genesis.
+The verifier reconstructs the genesis commitment, recomputes the SCID, and
+compares it with that expected value. This applies the genesis-binding principle
+used by [[?DID-WEBVH]]; the following scenarios describe its application to VHCEL.</p>
+<table class="simple">
+<caption>Replacement attacks addressed by an expected SCID</caption>
+<thead><tr><th scope="col">Attack</th><th scope="col">Attempt</th><th scope="col">Why verification rejects it</th></tr></thead>
+<tbody>
+<tr><th scope="row">Whole-history replacement</th><td>A compromised server
+publishes a fresh genesis with attacker-controlled keys and a newly signed
+history at the same URL.</td><td>The replacement genesis derives a different
+SCID. Copying the expected SCID into the replacement does not make its
+recomputed commitment match.</td></tr>
+<tr><th scope="row">Genesis key or policy substitution</th><td>An attacker
+changes initial authorization keys, initial state, or bootstrap witness policy
+and recomputes the subsequent chain.</td><td>Changing content protected by the
+SCID commitment changes the derived identifier. This protection applies only
+to fields included in that commitment.</td></tr>
+<tr><th scope="row">Substitution during discovery or relocation</th><td>A
+redirect, mirror, or new storage location returns another object's valid
+history under the expected name or locator.</td><td>The returned history fails
+the independently retained SCID check, even if its own proofs and chain are valid.</td></tr>
+</tbody>
+</table>
+<p>These are forms of the same substitution attack. For example, a client that
+has retained SCID <code>A</code> rejects a replacement whose genesis derives
+<code>B</code>, whether that replacement advertises <code>A</code> or <code>B</code>.
+The protection depends on the commitment's resistance to substitution, unambiguous
+encoding, permitted algorithms, and correct verification. The binding must
+specify which genesis fields are protected before these guarantees can be
+claimed for an implementation.</p>
 <p>Applications MUST define how a verifier obtains or establishes the expected
-identity of a history when identity matters.</p>
-<p>The mandatory SCID provides this binding when the expected value is securely
-obtained. Recomputing an attacker-supplied SCID establishes internal consistency,
-not that the supplied history is the intended one.</p>
+identity of a history when identity matters. The expected SCID must come from
+a source the caller already trusts, such as
+an authenticated reference or a previously verified and retained identifier.
+Taking both the history and the expected SCID from the same untrusted response
+does not prevent replacement. Remembering a SCID on first use can detect later
+replacement but does not authenticate that first encounter.</p>
+<p>A SCID does not establish the real-world identity or trustworthiness of its
+controller. It also does not detect an older valid prefix, select between valid
+forks sharing the same genesis, prevent misuse of a compromised active key, or
+ensure data availability. Those require the separate mechanisms discussed in
+<a href="#history-truncation"></a>, <a href="#fork-attacks"></a>,
+<a href="#authorization-key-compromise"></a>, and
+<a href="#external-data-availability"></a>.</p>
+<p class="note">An authenticated genesis digest or trusted checkpoint can also
+provide a cryptographic commitment for detecting replacement, subject to its
+verification rules and scope. VHCEL's SCID requirement makes a stable genesis
+identity common to all profiles; it does not introduce a protection that a CEL
+application could not provide.</p>
 </section>
 
 <section id="checkpoint-trust">
@@ -1322,22 +1374,24 @@ separate from controller authorization and outside the event-digest calculation.
 </ul>
 </section>
 <section id="cel-left-behind">
-<h4>What VHCEL Changes</h4>
+<h4>What VHCEL Adds</h4>
 <ul>
-<li><p><strong>History identity solely as an application choice.</strong> VHCEL
-requires a genesis-derived SCID for every history. CEL's DID example derives an
-identifier, but CEL does not make that a universal core requirement.</p></li>
-<li><p><strong>Proof verification as the whole verification result.</strong>
-VHCEL expands the proof-checking outline in CEL's verification algorithm into
-explicit checks for genesis identity, predecessor links, authorization, required
-data, and state transitions. Profiles still supply application semantics.</p></li>
-<li><p><strong>A success boolean as the only output.</strong> VHCEL returns the
-verified SCID, state, final event digest, and verification scope so callers can
-interpret what was checked.</p></li>
+<li><p><strong>Common history identity.</strong> VHCEL requires every application
+profile to use a genesis-derived SCID. CEL's DID example derives an identifier,
+but CEL does not make that a universal core requirement. An independently
+established SCID enables detection of the replacement attacks described in
+<a href="#genesis-substitution"></a>.</p></li>
+<li><p><strong>Common history-processing requirements.</strong> VHCEL specifies
+how genesis, predecessor linkage, authorization, required data, and state
+transitions are checked together. CEL already requires application specifications
+to define control, state construction, and witness validity; VHCEL makes the
+shared verification sequence explicit while retaining those application semantics.</p></li>
 </ul>
 </section>
-<p>VHCEL retains CEL's profile-based approach while making these history
-requirements common to all profiles.</p>
+<p>These additions describe a shared history-processing layer over the CEL
+model. They do not by themselves require a different event envelope. The result
+metadata in <a href="#history-verification"></a> describes what a verifier
+reports, rather than a difference in the log format.</p>
 </section>
 
 <section id="comparison-open-binding">

@@ -103,3 +103,18 @@ This replaces the pros-and-cons assessment with an account of the current
 design. Deferred choices such as the CEL envelope, proof suite, and digest
 encoding are explicitly distinguished from rejected choices. No normative
 processing requirements changed.
+
+## Shared processing requirements and SCID threat model
+
+Reduced the CEL additions to mandatory history identity and a shared processing
+sequence. Explicitly acknowledged CEL's application requirements for control,
+state construction, and witness validity. Result metadata is described as a
+verifier reporting concern, not a new log-format capability.
+
+Expanded the genesis-substitution discussion with whole-history replacement,
+protected genesis key or policy tampering, and substitution during discovery or
+relocation. These are manifestations of one attack family. The protection
+requires an independently trusted expected SCID and a correctly specified
+commitment covering the relevant genesis fields. The text distinguishes this
+from rollback, forks, compromised active keys, availability, and first-contact
+trust, and acknowledges that CEL profiles can provide equivalent commitments.
