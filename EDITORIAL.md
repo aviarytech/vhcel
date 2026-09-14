@@ -86,3 +86,11 @@ Updated terminology, conformance, the data model, genesis and verification
 algorithms, examples, and both log comparisons. The mandatory SCID, expected-SCID
 checks, and checkpoint binding remain. Exact genesis self-reference processing,
 SCID placement, event hashing, and proof coverage remain binding decisions.
+
+## Pros and cons of related log formats
+
+Replaced the field-by-field comparison tables and paired sketches with pros
+and cons for did:webvh and CEL as foundations for VHCEL. Each assessment states
+what the approach contributes and what adaptation or profile work remains.
+The existing comparison section anchors are preserved. The assessments are
+informative and do not change the event model or claim wire compatibility.
