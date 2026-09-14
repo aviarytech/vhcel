@@ -6,7 +6,7 @@
   "description": "Verifiable History with Cryptographic Event Log specification",
   "scripts": {
     "start": "python3 -m http.server 8080 --bind 127.0.0.1",
-    "build": "mkdir -p build && respec --src index.html --out build/index.html --localhost --port 8081 --use-local --haltonerror --haltonwarn --timeout 60"
+    "build": "mkdir -p build && respec --src index.html --out build/index.html --localhost --port 8081 --use-local --haltonerror --haltonwarn --timeout 60 && cp implementation-guide.html build/implementation-guide.html"
   },
   "devDependencies": {
     "respec": "37.4.0"

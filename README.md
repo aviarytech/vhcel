@@ -5,6 +5,8 @@ editor's draft authored in [ReSpec](https://respec.org/docs/).
 
 **[Read the specification](https://aviarytech.github.io/vhcel/)**
 
+[Short implementation guide](https://aviarytech.github.io/vhcel/implementation-guide.html)
+
 The initial text comes from the [VHCEL design conversation](https://chatgpt.com/share/6aa6418d-191c-83e8-99c0-48a4112da4b4).
 It covers the abstract history model, genesis, chaining, state transitions,
 authorization, pre-rotation, witnessing, external data, verification, application
@@ -32,6 +34,7 @@ from W3C and requires internet access.
 
 - `index.html` is the editable specification source.
 - `respec-config.js` contains publication metadata and bibliography entries.
+- `implementation-guide.html` is the separate prototype implementation checklist.
 - `package-lock.json` pins the build dependency tree.
 - `EDITORIAL.md` records changes made while importing the conversation.
 
@@ -65,7 +68,7 @@ and compatibility tests against existing CEL and did:webvh histories.
 ## GitHub Pages
 
 The [Pages workflow](.github/workflows/pages.yml) validates and exports the spec
-on every push to `main`, then deploys `build/index.html` to
+on every push to `main`, then deploys the specification and implementation guide to
 <https://aviarytech.github.io/vhcel/>. Pull requests run the same build without
 deploying. The workflow can also be run manually from the Actions tab.
 
