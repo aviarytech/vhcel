@@ -300,7 +300,7 @@ successfully verified history from an unverified representation.</p>
 <p>A conforming application specification MUST satisfy the requirements in
 <a href="#application-specifications"></a>.</p>
 </section></section>
-<section id="data-model"><h2>Data Model</h2><p>For the pros and cons of the related log formats, see <a href="#comparison-didwebvh"></a> and <a href="#comparison-cel"></a>.</p><p>The data model describes the events, operations, and policies that comprise a verifiable history. Concrete property names and encodings are selected by a CEL binding.</p><section id="event-model">
+<section id="data-model"><h2>Data Model</h2><p>For the design choices carried forward from related log formats, see <a href="#comparison-didwebvh"></a> and <a href="#comparison-cel"></a>.</p><p>The data model describes the events, operations, and policies that comprise a verifiable history. Concrete property names and encodings are selected by a CEL binding.</p><section id="event-model">
 <h3>Event Entry</h3><p>A history contains one or more events. The following table summarizes the abstract event properties.</p>
 <table class="simple"><caption>Conceptual event properties</caption><thead><tr><th scope="col">Property</th><th scope="col">Description</th></tr></thead>
 <tbody>
@@ -1261,88 +1261,98 @@ external storage, and appropriate commitment constructions when processing
 sensitive information.</p>
 </section>
 <section id="log-format-comparisons" class="informative">
-<h2>Log Format Comparisons</h2>
-<p>The following pros and cons assess <code>did:webvh</code> v1.0 and the CEL
-v0.1 draft as foundations for VHCEL, based on the specifications reviewed on
-13 September 2026. These are design assessments for a reusable history model;
-a constraint in that context may be an advantage for a particular application.</p>
+<h2>What VHCEL Takes from webvh and CEL</h2>
+<p>VHCEL combines the history-verification requirements of <code>did:webvh</code>
+with CEL's application-independent event model. The following sections explain
+which ideas the current draft carries forward and which it changes or leaves
+outside the core. They describe design choices, not wire compatibility.</p>
 
 <section id="comparison-didwebvh">
-<h3>did:webvh: Pros and Cons</h3>
-<p>[[?DID-WEBVH]] defines a verifiable history specifically for DID Documents.</p>
-<section id="didwebvh-pros">
-<h4>Pros</h4>
+<h3>From did:webvh</h3>
+<p>[[?DID-WEBVH]] supplies the starting point for stable history identity and
+verification across changes in control.</p>
+<section id="didwebvh-taken">
+<h4>What VHCEL Takes</h4>
 <ul>
-<li><p><strong>Concrete processing rules.</strong> Defined hashing, entry proofs,
-versioning, and resolution reduce the decisions an implementer must make.</p></li>
-<li><p><strong>Stable genesis identity.</strong> Mandatory SCIDs bind a DID to its
-inception event and support continuity when enabled portability changes its location.</p></li>
-<li><p><strong>Defined lifecycle controls.</strong> Update-key rules, optional
-pre-rotation, and witness thresholds provide specific mechanisms for managing
-changes in control.</p></li>
-<li><p><strong>Straightforward web publication.</strong> A JSON Lines history and
-DID-to-HTTPS discovery fit ordinary web hosting.</p></li>
+<li><p><strong>A mandatory genesis-derived SCID.</strong> Every history has a
+stable identity that can be checked against its genesis, even when its storage
+location changes.</p></li>
+<li><p><strong>Authorization through history.</strong> Each successor is checked
+against previously established authorization, including commitments that can
+authorize newly revealed keys.</p></li>
+<li><p><strong>Pre-rotation and witnessing.</strong> The model carries forward
+commitments to future keys and witness-policy checks, with their concrete rules
+defined by profiles.</p></li>
+<li><p><strong>Verification of state transitions.</strong> Processing checks the
+history and its control changes before accepting the resulting state.</p></li>
 </ul>
 </section>
-<section id="didwebvh-cons">
-<h4>Cons</h4>
+<section id="didwebvh-left-behind">
+<h4>What VHCEL Leaves Behind</h4>
 <ul>
-<li><p><strong>DID-specific scope.</strong> DID Documents, method parameters, and
-web discovery need adaptation for other kinds of evolving objects.</p></li>
-<li><p><strong>Repeated state.</strong> Each entry carries the resulting DID
-Document; small changes can repeat substantial unchanged data.</p></li>
-<li><p><strong>Additional hashing steps.</strong> SCID placeholders and
-<code>versionId</code> substitution require distinct preparation rules. Mandatory
-SCIDs alone do not require the current-ID substitution design.</p></li>
+<li><p><strong>A DID-specific core.</strong> DID Documents, DID syntax, method
+parameters, and DID-to-HTTPS discovery belong in an application profile.
+The core can describe other evolving objects.</p></li>
+<li><p><strong>A complete DID Document in every entry.</strong> Events carry
+operations; the application decides how those operations produce state,
+including whether to use snapshots or incremental changes.</p></li>
+<li><p><strong>Stored current IDs and predecessor substitution.</strong> VHCEL
+uses CEL's explicit <code>previousEvent</code> reference. It computes event
+digests without requiring <code>versionId</code> or replacing a current-ID field
+when hashing. Mandatory SCIDs do not require that construction.</p></li>
 </ul>
 </section>
-<p><strong>Implication for VHCEL:</strong> Reuse the requirements for genesis
-identity and explicit lifecycle verification. Generalize them through profiles
-while retaining CEL's predecessor references. VHCEL still needs concrete
-cryptographic procedures before it offers equivalent implementation guidance.</p>
 </section>
 
 <section id="comparison-cel">
-<h3>CEL: Pros and Cons</h3>
-<p>[[?CEL]] defines an event-log model with application-specific processing.</p>
-<section id="cel-pros">
-<h4>Pros</h4>
+<h3>From CEL</h3>
+<p>[[?CEL]] supplies the starting point for representing events independently
+of the application whose history they describe.</p>
+<section id="cel-taken">
+<h4>What VHCEL Takes</h4>
 <ul>
-<li><p><strong>Reusable across applications.</strong> Operations and application
-profiles accommodate different objects and state-transition rules.</p></li>
-<li><p><strong>Explicit predecessor links.</strong> <code>previousEvent</code>
-references the preceding event's digest without requiring a stored current-event
-ID or ID substitution.</p></li>
-<li><p><strong>Flexible payload storage.</strong> Embedded data and digest-bound
-external references allow large payloads to stay outside the log.</p></li>
-<li><p><strong>Separate witness evidence.</strong> The log envelope separates
-events from witness proofs, making the distinction visible in the data model.</p></li>
+<li><p><strong>Explicit predecessor references.</strong> Each non-genesis event
+uses <code>previousEvent</code> to reference the digest of the preceding event.</p></li>
+<li><p><strong>Operations and application profiles.</strong> The core describes
+history processing; applications define control and the meaning of state changes.</p></li>
+<li><p><strong>Embedded or externally referenced data.</strong> An operation can
+carry data directly or commit to data retrieved elsewhere.</p></li>
+<li><p><strong>Separate witness evidence.</strong> Witness receipts remain
+separate from controller authorization and outside the event-digest calculation.</p></li>
 </ul>
 </section>
-<section id="cel-cons">
-<h4>Cons</h4>
+<section id="cel-left-behind">
+<h4>What VHCEL Changes</h4>
 <ul>
-<li><p><strong>More profile work.</strong> Applications must define control,
-state construction, and witness validity; sharing an envelope does not make
-applications interoperable.</p></li>
-<li><p><strong>No universal SCID requirement.</strong> The DID example derives
-an identifier, but the core does not require a common genesis identity or
-pre-rotation policy for every history.</p></li>
-<li><p><strong>External-data availability.</strong> A digest verifies retrieved
-content; it does not ensure that required content remains retrievable.</p></li>
-<li><p><strong>Draft details remain unsettled.</strong> Serialization choices and
-witness-service interfaces still need refinement in the reviewed draft.</p></li>
+<li><p><strong>History identity solely as an application choice.</strong> VHCEL
+requires a genesis-derived SCID for every history. CEL's DID example derives an
+identifier, but CEL does not make that a universal core requirement.</p></li>
+<li><p><strong>Proof verification as the whole verification result.</strong>
+VHCEL expands the proof-checking outline in CEL's verification algorithm into
+explicit checks for genesis identity, predecessor links, authorization, required
+data, and state transitions. Profiles still supply application semantics.</p></li>
+<li><p><strong>A success boolean as the only output.</strong> VHCEL returns the
+verified SCID, state, final event digest, and verification scope so callers can
+interpret what was checked.</p></li>
 </ul>
 </section>
-<p><strong>Implication for VHCEL:</strong> Keep CEL's predecessor linkage and
-application independence. Specify mandatory SCID derivation and shared
-verification requirements, with profiles supplying application policy. The
-binding, proof coverage, and interoperability tests remain unfinished.</p>
+<p>VHCEL retains CEL's profile-based approach while making these history
+requirements common to all profiles.</p>
 </section>
-<p class="note">Neither format's hash chain alone proves freshness or the
-absence of forks. Re-encoding an existing history also does not preserve its
-identifiers or proofs automatically; compatibility requires a defined binding
-and verification against that binding.</p>
+
+<section id="comparison-open-binding">
+<h3>What Is Still Open</h3>
+<p>Taking a design idea does not select every detail of its source format.
+VHCEL has not yet adopted an exact CEL envelope, serialization, digest encoding,
+or proof suite. SCID derivation and concrete policy bindings also remain open;
+these choices are deferred, not rejected. In particular, genesis may still
+need placeholder processing for embedded SCID references even though event
+chaining does not use current-ID substitution.</p>
+<p>These sections describe the current processing model. A binding and test
+vectors are still needed to establish interoperability. Existing histories
+cannot be converted by renaming fields while assuming their original identifiers
+and proofs remain valid.</p>
+</section>
 </section>
 
 <section id="iana-considerations" class="appendix">

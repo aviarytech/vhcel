@@ -94,3 +94,12 @@ and cons for did:webvh and CEL as foundations for VHCEL. Each assessment states
 what the approach contributes and what adaptation or profile work remains.
 The existing comparison section anchors are preserved. The assessments are
 informative and do not change the event model or claim wire compatibility.
+
+## Design choices carried forward
+
+Reframed the related-format sections around what VHCEL takes from did:webvh
+and CEL, what it leaves outside the core or changes, and what remains undecided.
+This replaces the pros-and-cons assessment with an account of the current
+design. Deferred choices such as the CEL envelope, proof suite, and digest
+encoding are explicitly distinguished from rejected choices. No normative
+processing requirements changed.
